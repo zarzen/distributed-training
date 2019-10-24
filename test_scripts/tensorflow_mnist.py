@@ -15,6 +15,7 @@
 
 import os
 import errno
+from datetime import datetime
 import tensorflow as tf
 import horovod.tensorflow as hvd
 import numpy as np
@@ -121,6 +122,7 @@ def main(_):
     global_step = tf.train.get_or_create_global_step()
     train_op = opt.minimize(loss, global_step=global_step)
 
+    log_dir="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     hooks = [
         # Horovod: BroadcastGlobalVariablesHook broadcasts initial variable states
         # from rank 0 to all other processes. This is necessary to ensure consistent
@@ -133,6 +135,7 @@ def main(_):
 
         tf.train.LoggingTensorHook(tensors={'step': global_step, 'loss': loss},
                                    every_n_iter=10),
+        keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch = 3)
     ]
 
     # Horovod: pin GPU to be used to process local rank (one GPU per process)

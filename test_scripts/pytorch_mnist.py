@@ -6,6 +6,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import torch.utils.data.distributed
 import horovod.torch as hvd
+from line_profiler import LineProfiler
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -88,6 +89,9 @@ class Net(nn.Module):
 
 
 model = Net()
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+print("parameter size", count_parameters(model))
 
 if args.cuda:
     # Move model to GPU.
@@ -109,7 +113,8 @@ optimizer = hvd.DistributedOptimizer(optimizer,
                                      named_parameters=model.named_parameters(),
                                      compression=compression)
 
-
+profile = LineProfiler()
+@profile
 def train(epoch):
     model.train()
     # Horovod: set epoch to sampler for shuffling.
@@ -168,3 +173,5 @@ def test():
 for epoch in range(1, args.epochs + 1):
     train(epoch)
     test()
+
+profile.print_stats()

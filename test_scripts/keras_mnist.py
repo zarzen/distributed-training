@@ -1,5 +1,6 @@
 from __future__ import print_function
 import keras
+from datetime import datetime
 from keras.datasets import mnist
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
@@ -22,7 +23,8 @@ batch_size = 128
 num_classes = 10
 
 # Horovod: adjust number of epochs based on number of GPUs.
-epochs = int(math.ceil(12.0 / hvd.size()))
+# epochs = int(math.ceil(12.0 / hvd.size()))
+epochs = 3
 
 # Input image dimensions
 img_rows, img_cols = 28, 28
@@ -73,11 +75,13 @@ model.compile(loss=keras.losses.categorical_crossentropy,
               optimizer=opt,
               metrics=['accuracy'])
 
+log_dir="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 callbacks = [
     # Horovod: broadcast initial variable states from rank 0 to all other processes.
     # This is necessary to ensure consistent initialization of all workers when
     # training is started with random weights or restored from a checkpoint.
     hvd.callbacks.BroadcastGlobalVariablesCallback(0),
+    tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch = 3)
 ]
 
 # Horovod: save checkpoints only on worker 0 to prevent other workers from corrupting them.
