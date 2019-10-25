@@ -4,7 +4,9 @@ import collections
 # from tensorflow.python.eager import profiler
 from tensorflow.python.client import timeline
 import json
-from os.path import join
+from os.path import join, exists
+from os import makedirs
+
 
 class TimePair():
     def __init__(self):
@@ -61,6 +63,9 @@ class TFProfiler(tf.keras.callbacks.Callback):
             chrome_trace = event.generate_chrome_trace_format(show_dataflow=False)
             parsed_trace = json.loads(chrome_trace)
             steps.extend(parsed_trace['traceEvents'])
+        
+        if not exists(self.path):
+            makedirs(self.path)
         with open(join(self.path, 'trace.json'), 'w') as ofile:
             json.dump({'traceEvents':steps}, ofile, indent=2)
     
