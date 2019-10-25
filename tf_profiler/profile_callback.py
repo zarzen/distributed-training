@@ -67,5 +67,10 @@ class TFProfiler(tf.keras.callbacks.Callback):
         if not exists(self.path):
             makedirs(self.path)
         with open(join(self.path, 'trace.json'), 'w') as ofile:
-            json.dump({'traceEvents':steps}, ofile, indent=2)
+            # json.dump({'traceEvents':steps}, ofile, indent=2)
+            ofile.write(
+                '[\n' + \
+                ',\n'.join(json.dumps(s) for s in steps) + \
+                ']\n'
+            )
     
