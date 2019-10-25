@@ -4,6 +4,9 @@ from tensorflow import keras
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, Flatten
 import horovod.tensorflow.keras as hvd
 from datetime import datetime
+import sys
+sys.path.append("../")
+from tf_profiler.profile_callback import TFProfiler
 
 # Horovod: initialize Horovod.
 hvd.init()
@@ -37,31 +40,32 @@ opt = keras.optimizers.Adadelta(1.0 * hvd.size())
 # Horovod: add Horovod Distributed Optimizer.
 opt = hvd.DistributedOptimizer(opt)
 
-# run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-# run_metadata= tf.RunMetadata()
+run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+run_metadata= tf.RunMetadata()
 
-log_dir="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir="../logs/tensorboard-profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch = 3)
+tfprofiler = TFProfiler("../data/tf_custmozied_profiler-{}".format(hvd.local_rank()), run_metadata)
 
 # ================ compile models
 model.compile(optimizer=opt,
               loss='sparse_categorical_crossentropy',
               metrics=['accuracy'],
-            #   options=run_options, 
-            #   run_metadata=run_metadata,
+              options=run_options, 
+              run_metadata=run_metadata,
               )
+# profile_hook = tf.train.ProfilerHook(save_steps=10,
+#                                 output_dir="../data/tf_profile_hooks",
+#                                 show_memory=True)
 
 # Training
 model.fit(x_train, y_train, epochs=1,
-        callbacks=[tensorboard_callback])
+        callbacks=[tfprofiler])
 
 test_loss, test_acc = model.evaluate(x_test,  y_test, verbose=2)
 
 print('\nTest accuracy:', test_acc)
-
-run_metadata= tf.RunMetadata()
-tl = timeline.Timeline(run_metadata.step_stats)
-ctf = tl.generate_chrome_trace_format()
-with open('timelines/tf_redo_getmeta.json', 'w') as f:
-    f.write(ctf)
+# print('\n tf profiler, training one batch, avg time cost: ', tfprofiler.summarize_training(), 's')
+# run_metadata= tf.RunMetadata()
+tfprofiler.writeout_traces()

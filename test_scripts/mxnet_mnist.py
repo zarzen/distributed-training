@@ -37,7 +37,7 @@ logging.info(args)
 
 # Function to get mnist iterator given a rank
 def get_mnist_iterator(rank):
-    data_dir = "data-%d" % rank
+    data_dir = "../data/mxnex/data-%d" % rank
     if not os.path.isdir(data_dir):
         os.makedirs(data_dir)
     zip_file_path = download('http://data.mxnet.io/mxnet/data/mnist.zip',

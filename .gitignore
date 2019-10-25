@@ -2,3 +2,5 @@ data*/
 checkpoints/
 logs/
 timelines/
+.vscode/
+__pycache__/
