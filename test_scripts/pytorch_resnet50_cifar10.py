@@ -17,13 +17,6 @@ import time
 import json
 import logging
 
-logger = logging.getLogger("torch-resnet50-cifar10")
-fh = logging.FileHandler('../logs/torch-resnet50-cifar10-timeline.log')
-fh.setLevel(logging.INFO)
-formatter = logging.Formatter('%(message)s')
-fh.setFormatter(formatter)
-logger.addHandler(fh)
-
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
@@ -93,6 +86,8 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
+logging.basicConfig(filename='../logs/torch-resnet50-cifar10-timeline{}.log'.format(hvd.rank()),
+                    level=logging.DEBUG)
 
 # Horovod: limit # of CPU threads to be used per worker.
 torch.set_num_threads(4)
@@ -179,25 +174,25 @@ def train(epoch):
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
                 target_batch = target[i:i + args.batch_size]
-                logger.info(json.dumps({'e': 'forward-start', 't': time.time()}))
+                logging.info(json.dumps({'e': 'forward-start', 't': time.time()}))
                 output = model(data_batch)
-                logger.info(json.dumps({'e': 'forward-end', 't': time.time()}))
+                logging.info(json.dumps({'e': 'forward-end', 't': time.time()}))
 
-                logger.info(json.dumps({'e': 'comp-loss-start', 't': time.time()}))
+                logging.info(json.dumps({'e': 'comp-loss-start', 't': time.time()}))
                 train_accuracy.update(accuracy(output, target_batch))
                 loss = F.cross_entropy(output, target_batch)
                 train_loss.update(loss)
                 # Average gradients among sub-batches
                 loss.div_(math.ceil(float(len(data)) / args.batch_size))
-                logger.info(json.dumps({'e': 'comp-loss-end', 't': time.time()}))
-                logger.info(json.dumps({'e': 'backward-start', 't': time.time()}))
+                logging.info(json.dumps({'e': 'comp-loss-end', 't': time.time()}))
+                logging.info(json.dumps({'e': 'backward-start', 't': time.time()}))
                 loss.backward()
-                logger.info(json.dumps({'e': 'backward-end', 't': time.time()}))
+                logging.info(json.dumps({'e': 'backward-end', 't': time.time()}))
             
             # Gradient is applied across all ranks
-            logger.info(json.dumps({'e': 'grad-update-start', 't': time.time()}))
+            logging.info(json.dumps({'e': 'grad-update-start', 't': time.time()}))
             optimizer.step()
-            logger.info(json.dumps({'e': 'grad-update-end', 't': time.time()}))
+            logging.info(json.dumps({'e': 'grad-update-end', 't': time.time()}))
 
             t.set_postfix({'loss': train_loss.avg.item(),
                            'accuracy': 100. * train_accuracy.avg.item()})
