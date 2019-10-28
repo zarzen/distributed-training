@@ -37,7 +37,7 @@ parser.add_argument('--batch-size', type=int, default=128,
                     help='input batch size for training')
 parser.add_argument('--val-batch-size', type=int, default=128,
                     help='input batch size for validation')
-parser.add_argument('--epochs', type=int, default=90,
+parser.add_argument('--epochs', type=int, default=10,
                     help='number of epochs to train')
 parser.add_argument('--base-lr', type=float, default=0.0125,
                     help='learning rate for a single GPU')
@@ -283,4 +283,6 @@ class Metric(object):
 for epoch in range(resume_from_epoch, args.epochs):
     train(epoch)
     validate(epoch)
-    save_checkpoint(epoch)
+    # save_checkpoint(epoch)
+
+logging.info(profile.print_stats())
