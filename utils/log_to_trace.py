@@ -11,7 +11,10 @@ def main():
     with open(args.log_path, 'r') as ifile:
         data = []
         for line in ifile:
-            data.append(json.loads(line))
+            entry = json.loads(line)
+            entry['ts'] *= 1e6
+            entry['dur'] *=1e6
+            data.append(entry)
     
     with open(args.output_path, 'w') as ofile:
         ofile.write(
