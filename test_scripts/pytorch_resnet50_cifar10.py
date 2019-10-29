@@ -86,7 +86,12 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
-logging.basicConfig(filename='../logs/torch-resnet50-cifar10-timeline{}.log'.format(hvd.rank()),
+logdir = "../logs"
+if not os.path.exists(logdir):
+    os.makedirs(logdir)
+logging.basicConfig(filename=logdir+'/torch-resnet50-cifar10-timeline{}.log'.format(hvd.rank()),
+                    format='%(message)s',
+                    filemode='w',
                     level=logging.DEBUG)
 
 # Horovod: limit # of CPU threads to be used per worker.
@@ -174,25 +179,29 @@ def train(epoch):
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
                 target_batch = target[i:i + args.batch_size]
-                logging.info(json.dumps({'e': 'forward-start', 't': time.time()}))
+                lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 output = model(data_batch)
-                logging.info(json.dumps({'e': 'forward-end', 't': time.time()}))
+                lobj["dur"]=time.time()-lobj["ts"]
+                logging.info(json.dumps(lobj))
 
-                logging.info(json.dumps({'e': 'comp-loss-start', 't': time.time()}))
+                lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 train_accuracy.update(accuracy(output, target_batch))
                 loss = F.cross_entropy(output, target_batch)
                 train_loss.update(loss)
                 # Average gradients among sub-batches
                 loss.div_(math.ceil(float(len(data)) / args.batch_size))
-                logging.info(json.dumps({'e': 'comp-loss-end', 't': time.time()}))
-                logging.info(json.dumps({'e': 'backward-start', 't': time.time()}))
+                lobj["dur"]=time.time()-lobj["ts"]
+                logging.info(json.dumps(lobj))
+                lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 loss.backward()
-                logging.info(json.dumps({'e': 'backward-end', 't': time.time()}))
+                lobj["dur"]=time.time()-lobj["ts"]
+                logging.info(json.dumps(lobj))
             
             # Gradient is applied across all ranks
-            logging.info(json.dumps({'e': 'grad-update-start', 't': time.time()}))
+            lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
             optimizer.step()
-            logging.info(json.dumps({'e': 'grad-update-end', 't': time.time()}))
+            lobj["dur"]=time.time()-lobj["ts"]
+            logging.info(json.dumps(lobj))
 
             t.set_postfix({'loss': train_loss.avg.item(),
                            'accuracy': 100. * train_accuracy.avg.item()})
@@ -285,4 +294,4 @@ for epoch in range(resume_from_epoch, args.epochs):
     validate(epoch)
     # save_checkpoint(epoch)
 
-logging.info(profile.print_stats())
+profile.print_stats()
