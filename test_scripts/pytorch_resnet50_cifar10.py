@@ -13,7 +13,8 @@ import os
 import math
 from tqdm import tqdm
 from line_profiler import LineProfiler
-import time 
+import time
+from datetime import datetime
 import json
 import logging
 
@@ -86,10 +87,12 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
-logdir = "../logs"
+logdir = "../logs/torch-resnet50-cifar10-timelines"
 if not os.path.exists(logdir):
     os.makedirs(logdir)
-logging.basicConfig(filename=logdir+'/torch-resnet50-cifar10-timeline{}.log'.format(hvd.rank()),
+dt = datetime.fromtimestamp(time.time())
+logging.basicConfig(filename=logdir+'/{}-rank{}.log'.format(dt.strftime("%Y%m%d-%H%M%S"), 
+                                                            hvd.rank()),
                     format='%(message)s',
                     filemode='w',
                     level=logging.DEBUG)
