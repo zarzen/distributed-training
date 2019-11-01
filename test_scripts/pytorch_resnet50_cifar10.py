@@ -203,7 +203,10 @@ def train(epoch):
             
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-            optimizer.step()
+            optimizer.synchronize()
+            with optimizer.skip_synchronize():
+                optimizer.step()
+            # optimizer.step()
             lobj["dur"]=time.time()-lobj["ts"]
             logging.info(json.dumps(lobj))
 
