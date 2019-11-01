@@ -295,7 +295,7 @@ class Metric(object):
 
 for epoch in range(resume_from_epoch, args.epochs):
     train(epoch)
-    validate(epoch)
+    # validate(epoch)
     # save_checkpoint(epoch)
 
 profile.print_stats()
