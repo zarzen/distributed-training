@@ -174,7 +174,7 @@ def train(epoch):
               disable=not verbose) as t:
         for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(epoch, batch_idx)
-            if batch_idx > 50:
+            if batch_idx > 20:
                 return 
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
