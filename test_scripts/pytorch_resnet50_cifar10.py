@@ -87,6 +87,15 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
+class MyLogger:
+    def __init__(self, logpath):
+        self.log_file = open(logpath, 'w+')
+    def info(self, msg):
+        self.log_file.write(msg + '\n')
+        # self.log_file.wrtie("\n")
+    def __del__(self):
+        self.log_file.close()
+
 def get_logger():
     logdir = "~/horovod_logs/model_log"
     logdir = os.path.expanduser(logdir)
@@ -95,14 +104,7 @@ def get_logger():
     dt = datetime.fromtimestamp(time.time())
     timestamp = dt.strftime("%Y%m%d-%H%M%S")
     logging_file = os.path.join(logdir, "{}-rank{}.log".format(timestamp, hvd.rank()))
-    # print(logging_file)
-    # logging.basicConfig(level=logging.DEBUG, format='%(message)s')
-    logger = logging.getLogger("model_logger")
-    f_handler = logging.FileHandler(logging_file, mode='w')
-    f_handler.setLevel(logging.DEBUG)
-    f_format = logging.Formatter('%(message)s')
-    f_handler.setFormatter(f_format)
-    logger.addHandler(f_handler)
+    logger = MyLogger(logging_file)
     return logger
 
 model_logger = get_logger()
