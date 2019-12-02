@@ -179,8 +179,8 @@ def train(epoch):
               disable=not verbose) as t:
         for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(epoch, batch_idx)
-            if batch_idx >= 50:
-                return
+            # if batch_idx >= 50:
+            #     return
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
@@ -297,10 +297,13 @@ class Metric(object):
     def avg(self):
         return self.sum / self.n
 
-
+lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
 for epoch in range(resume_from_epoch, args.epochs):
     train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
+
+lobj["dur"]=time.time()-lobj["ts"]
+model_logger.info(json.dumps(lobj))
 
 # profile.print_stats()
