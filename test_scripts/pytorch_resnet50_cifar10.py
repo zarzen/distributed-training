@@ -87,7 +87,8 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
-logdir = "../logs/torch-resnet50-cifar10-timelines"
+logdir = "~/horovod_logs/model_log"
+logdir = os.path.expanduser(logdir)
 if not os.path.exists(logdir):
     os.makedirs(logdir)
 dt = datetime.fromtimestamp(time.time())
@@ -117,13 +118,6 @@ train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=allreduce_batch_size,
     sampler=train_sampler, **kwargs)
 
-val_dataset = torchvision.datasets.CIFAR10(root='../data', train=False,
-                                       download=True, transform=transform)
-
-val_sampler = torch.utils.data.distributed.DistributedSampler(
-    val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size,
-                                         sampler=val_sampler, **kwargs)
 
 # Set up standard ResNet-50 model.
 model = models.resnet50()
@@ -160,9 +154,9 @@ if resume_from_epoch > 0 and hvd.rank() == 0:
 hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-profile = LineProfiler()
+# profile = LineProfiler()
 
-@profile
+# @profile
 def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
@@ -174,7 +168,7 @@ def train(epoch):
               disable=not verbose) as t:
         for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(epoch, batch_idx)
-            if batch_idx >= 30:
+            if batch_idx >= 50:
                 return
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
@@ -203,10 +197,7 @@ def train(epoch):
             
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-            optimizer.synchronize()
-            with optimizer.skip_synchronize():
-                optimizer.step()
-            # optimizer.step()
+            optimizer.step()
             lobj["dur"]=time.time()-lobj["ts"]
             logging.info(json.dumps(lobj))
 
@@ -301,4 +292,4 @@ for epoch in range(resume_from_epoch, args.epochs):
     # validate(epoch)
     # save_checkpoint(epoch)
 
-profile.print_stats()
+# profile.print_stats()

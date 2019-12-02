@@ -1,12 +1,12 @@
 from __future__ import print_function
 import argparse
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 import torch.utils.data.distributed
 import horovod.torch as hvd
-from line_profiler import LineProfiler
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -113,8 +113,6 @@ optimizer = hvd.DistributedOptimizer(optimizer,
                                      named_parameters=model.named_parameters(),
                                      compression=compression)
 
-profile = LineProfiler()
-@profile
 def train(epoch):
     model.train()
     # Horovod: set epoch to sampler for shuffling.
@@ -174,4 +172,3 @@ for epoch in range(1, args.epochs + 1):
     train(epoch)
     test()
 
-profile.print_stats()
