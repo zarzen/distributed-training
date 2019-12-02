@@ -87,16 +87,25 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
-logdir = "~/horovod_logs/model_log"
-logdir = os.path.expanduser(logdir)
-if not os.path.exists(logdir):
-    os.makedirs(logdir)
-dt = datetime.fromtimestamp(time.time())
-logging.basicConfig(filename=logdir+'/{}-rank{}.log'.format(dt.strftime("%Y%m%d-%H%M%S"), 
-                                                            hvd.rank()),
-                    format='%(message)s',
-                    filemode='w',
-                    level=logging.DEBUG)
+def get_logger():
+    logdir = "~/horovod_logs/model_log"
+    logdir = os.path.expanduser(logdir)
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+    dt = datetime.fromtimestamp(time.time())
+    timestamp = dt.strftime("%Y%m%d-%H%M%S")
+    logging_file = os.path.join(logdir, "{}-rank{}.log".format(timestamp, hvd.rank()))
+    print(logging_file)
+    logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+    logger = logging.getLogger(__name__)
+    f_handler = logging.FileHandler(logging_file, mode='w')
+    f_handler.setLevel(logging.DEBUG)
+    f_format = logging.Formatter('%(message)s')
+    f_handler.setFormatter(f_format)
+    logger.addHandler(f_handler)
+    return logger
+
+model_logger = get_logger()
 
 # Horovod: limit # of CPU threads to be used per worker.
 torch.set_num_threads(4)
@@ -180,7 +189,7 @@ def train(epoch):
                 lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 output = model(data_batch)
                 lobj["dur"]=time.time()-lobj["ts"]
-                logging.info(json.dumps(lobj))
+                model_logger.info(json.dumps(lobj))
 
                 lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 train_accuracy.update(accuracy(output, target_batch))
@@ -189,17 +198,17 @@ def train(epoch):
                 # Average gradients among sub-batches
                 loss.div_(math.ceil(float(len(data)) / args.batch_size))
                 lobj["dur"]=time.time()-lobj["ts"]
-                logging.info(json.dumps(lobj))
+                model_logger.info(json.dumps(lobj))
                 lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 loss.backward()
                 lobj["dur"]=time.time()-lobj["ts"]
-                logging.info(json.dumps(lobj))
+                model_logger.info(json.dumps(lobj))
             
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
             optimizer.step()
             lobj["dur"]=time.time()-lobj["ts"]
-            logging.info(json.dumps(lobj))
+            model_logger.info(json.dumps(lobj))
 
             t.set_postfix({'loss': train_loss.avg.item(),
                            'accuracy': 100. * train_accuracy.avg.item()})
