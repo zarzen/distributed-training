@@ -103,7 +103,7 @@ def get_logger():
         os.makedirs(logdir)
     dt = datetime.fromtimestamp(time.time())
     timestamp = dt.strftime("%Y%m%d-%H%M%S")
-    logging_file = os.path.join(logdir, "{}-rank{}.log".format(timestamp, hvd.rank()))
+    logging_file = os.path.join(logdir, "model-{}-rank{}.log".format(timestamp, hvd.rank()))
     logger = MyLogger(logging_file)
     return logger
 
@@ -117,7 +117,9 @@ transform = transforms.Compose(
     [transforms.ToTensor(),
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-train_dataset = torchvision.datasets.CIFAR10(root='../data', train=True,
+import os
+print('cwd:', os.getcwd())
+train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                         download=True, transform=transform)
 
 # Horovod: use DistributedSampler to partition data among workers. Manually specify
