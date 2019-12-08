@@ -218,9 +218,9 @@ def train(epoch):
                            'accuracy': 100. * train_accuracy.avg.item()})
             t.update(1)
 
-    if log_writer:
-        log_writer.add_scalar('train/loss', train_loss.avg, epoch)
-        log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
+    # if log_writer:
+    #     log_writer.add_scalar('train/loss', train_loss.avg, epoch)
+    #     log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
 
 
 def validate(epoch):
