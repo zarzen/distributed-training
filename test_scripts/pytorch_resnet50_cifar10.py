@@ -85,7 +85,7 @@ resume_from_epoch = hvd.broadcast(torch.tensor(resume_from_epoch), root_rank=0,
 verbose = 1 if hvd.rank() == 0 else 0
 
 # Horovod: write TensorBoard logs on first worker.
-log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
+# log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
 class MyLogger:
     def __init__(self, logpath):
@@ -243,9 +243,9 @@ def validate(epoch):
                                'accuracy': 100. * val_accuracy.avg.item()})
                 t.update(1)
 
-    if log_writer:
-        log_writer.add_scalar('val/loss', val_loss.avg, epoch)
-        log_writer.add_scalar('val/accuracy', val_accuracy.avg, epoch)
+    # if log_writer:
+    #     log_writer.add_scalar('val/loss', val_loss.avg, epoch)
+    #     log_writer.add_scalar('val/accuracy', val_accuracy.avg, epoch)
 
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
