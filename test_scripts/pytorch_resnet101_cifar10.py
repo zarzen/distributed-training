@@ -218,35 +218,6 @@ def train(epoch):
                            'accuracy': 100. * train_accuracy.avg.item()})
             t.update(1)
 
-    # if log_writer:
-    #     log_writer.add_scalar('train/loss', train_loss.avg, epoch)
-    #     log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
-
-
-# def validate(epoch):
-#     model.eval()
-#     val_loss = Metric('val_loss')
-#     val_accuracy = Metric('val_accuracy')
-
-#     with tqdm(total=len(val_loader),
-#               desc='Validate Epoch  #{}'.format(epoch + 1),
-#               disable=not verbose) as t:
-#         with torch.no_grad():
-#             for data, target in val_loader:
-#                 if args.cuda:
-#                     data, target = data.cuda(), target.cuda()
-#                 output = model(data)
-
-#                 val_loss.update(F.cross_entropy(output, target))
-#                 val_accuracy.update(accuracy(output, target))
-#                 t.set_postfix({'loss': val_loss.avg.item(),
-#                                'accuracy': 100. * val_accuracy.avg.item()})
-#                 t.update(1)
-
-    # if log_writer:
-    #     log_writer.add_scalar('val/loss', val_loss.avg, epoch)
-    #     log_writer.add_scalar('val/accuracy', val_accuracy.avg, epoch)
-
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
 # accuracy. Scale the learning rate `lr = base_lr` ---> `lr = base_lr * hvd.size()` during
