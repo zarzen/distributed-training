@@ -133,7 +133,7 @@ train_loader = torch.utils.data.DataLoader(
 
 
 # Set up standard ResNet-50 model.
-model = models.resnet50()
+model = models.resnet101()
 
 if args.cuda:
     # Move model to GPU.

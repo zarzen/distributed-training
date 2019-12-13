@@ -132,8 +132,8 @@ train_loader = torch.utils.data.DataLoader(
     sampler=train_sampler, **kwargs)
 
 
-# Set up standard ResNet-50 model.
-model = models.resnet50()
+# Set up standard VGG16 with bn model.
+model = models.vgg16_bn()
 
 if args.cuda:
     # Move model to GPU.
