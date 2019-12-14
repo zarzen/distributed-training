@@ -110,9 +110,9 @@ model_logger = get_logger()
 
 # Horovod: limit # of CPU threads to be used per worker.
 print('cpu count', os.cpu_count())
-torch.set_num_threads(os.cpu_count())
+torch.set_num_threads(4)
 
-kwargs = {'num_workers': os.cpu_count(), 'pin_memory': True} if args.cuda else {}
+kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 transform = transforms.Compose(
     [transforms.ToTensor(),
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
