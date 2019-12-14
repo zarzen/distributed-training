@@ -117,10 +117,10 @@ transform = transforms.Compose(
     [transforms.ToTensor(),
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-import os
 print('cwd:', os.getcwd())
-train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                        download=True, transform=transform)
+train_dataset = torchvision.datasets.CIFAR10(
+    root='./data-{}'.format(hvd.rank()), train=True,
+    download=True, transform=transform)
 
 # Horovod: use DistributedSampler to partition data among workers. Manually specify
 # `num_replicas=hvd.size()` and `rank=hvd.rank()`.
