@@ -16,7 +16,7 @@ import time
 from datetime import datetime
 import json
 import logging
-
+from logger import get_logger
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
@@ -85,26 +85,6 @@ verbose = 1 if hvd.rank() == 0 else 0
 
 # Horovod: write TensorBoard logs on first worker.
 # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
-
-class MyLogger:
-    def __init__(self, logpath):
-        self.log_file = open(logpath, 'w+')
-    def info(self, msg):
-        self.log_file.write(msg + '\n')
-        # self.log_file.wrtie("\n")
-    def __del__(self):
-        self.log_file.close()
-
-def get_logger():
-    logdir = "~/horovod_logs/model_log"
-    logdir = os.path.expanduser(logdir)
-    if not os.path.exists(logdir):
-        os.makedirs(logdir)
-    dt = datetime.fromtimestamp(time.time())
-    timestamp = dt.strftime("%Y%m%d-%H%M%S")
-    logging_file = os.path.join(logdir, "model-{}-rank{}.log".format(timestamp, hvd.rank()))
-    logger = MyLogger(logging_file)
-    return logger
 
 model_logger = get_logger()
 
