@@ -1,6 +1,8 @@
 import time
 import os
 from datetime import datetime
+import contextlib
+import json
 
 class MyLogger:
     def __init__(self, logpath):
@@ -21,3 +23,10 @@ def get_logger(hvd):
     logging_file = os.path.join(logdir, "model-{}-rank{}.log".format(timestamp, hvd.rank()))
     logger = MyLogger(logging_file)
     return logger
+
+@contextlib.contextmanager
+def log_time(_logger : MyLogger, phase_name, hvd):
+    lobj = {"ph": "X", "name": phase_name, "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+    yield
+    lobj["dur"] = time.time()-lobj["ts"]
+    _logger.info(json.dumps(lobj))
