@@ -86,7 +86,7 @@ verbose = 1 if hvd.rank() == 0 else 0
 # Horovod: write TensorBoard logs on first worker.
 # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
-model_logger = get_logger()
+model_logger = get_logger(hvd)
 
 # Horovod: limit # of CPU threads to be used per worker.
 __n_threads = int(os.cpu_count() / torch.cuda.device_count())

@@ -11,7 +11,7 @@ class MyLogger:
     def __del__(self):
         self.log_file.close()
 
-def get_logger():
+def get_logger(hvd):
     logdir = "~/horovod_logs/model_log"
     logdir = os.path.expanduser(logdir)
     if not os.path.exists(logdir):
