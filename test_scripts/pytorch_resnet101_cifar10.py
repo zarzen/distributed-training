@@ -101,7 +101,7 @@ transform = transforms.Compose(
 
 print('cwd:', os.getcwd())
 train_dataset = torchvision.datasets.CIFAR10(
-    root='../data', train=True,
+    root='~/distributed-training/data', train=True,
     download=False, transform=transform)
 
 # Horovod: use DistributedSampler to partition data among workers. Manually specify
