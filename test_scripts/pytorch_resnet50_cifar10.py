@@ -99,7 +99,7 @@ transform = transforms.Compose(
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
 print('cwd:', os.getcwd())
-train_dataset = torchvision.datasets.CIFAR10(root='../data', 
+train_dataset = torchvision.datasets.CIFAR10(root='~/distributed-training/data', 
                                         train=True,
                                         download=False, transform=transform)
 
