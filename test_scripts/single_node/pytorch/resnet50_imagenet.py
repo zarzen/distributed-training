@@ -12,6 +12,8 @@ import horovod.torch as hvd
 import os
 import math
 from tqdm import tqdm
+import sys
+sys.path.append("../../")
 from logger import get_logger, log_time
 import json
 import time
