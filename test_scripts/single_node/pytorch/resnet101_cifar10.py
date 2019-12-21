@@ -16,9 +16,7 @@ import time
 from datetime import datetime
 import json
 import logging
-import sys
-sys.path.append("../../")
-from logger import get_logger
+from path_fix import get_logger
 
 
 # Training settings
