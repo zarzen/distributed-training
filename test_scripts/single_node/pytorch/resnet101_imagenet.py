@@ -174,7 +174,7 @@ def train(epoch):
         for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(epoch, batch_idx)
             # number of batchs limit
-            if batch_idx >= 5000:
+            if batch_idx >= 500:
                 return 
 
             if args.cuda:
