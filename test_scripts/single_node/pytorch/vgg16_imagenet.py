@@ -179,7 +179,8 @@ def train(epoch):
                 return
 
             if args.cuda:
-                data, target = data.cuda(), target.cuda()
+                with log_time(model_logger, "batch-data-tocuda", hvd):
+                    data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
