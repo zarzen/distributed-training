@@ -173,6 +173,8 @@ def train(epoch):
               desc='Train Epoch     #{}'.format(epoch + 1),
               disable=not verbose) as t:
         for batch_idx, (data, target) in enumerate(train_loader):
+            with log_time(model_logger, "start-batch", hvd):
+                pass
             adjust_learning_rate(epoch, batch_idx)
             # number of batchs limit
             if batch_idx >= 500:
@@ -217,9 +219,10 @@ def train(epoch):
             lobj["dur"]=time.time()-lobj["ts"]
             model_logger.info(json.dumps(lobj))
 
-            t.set_postfix({'loss': train_loss.avg.item(),
-                           'accuracy': 100. * train_accuracy.avg.item()})
-            t.update(1)
+            with log_time(model_logger, "update-tqdm", hvd):
+                t.set_postfix({'loss': train_loss.avg.item(),
+                            'accuracy': 100. * train_accuracy.avg.item()})
+                t.update(1)
 
     if log_writer:
         log_writer.add_scalar('train/loss', train_loss.avg, epoch)
