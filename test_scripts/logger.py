@@ -1,8 +1,14 @@
 import time
+import torch
 import os
 from datetime import datetime
 import contextlib
 import json
+
+def sync_e():
+    e = torch.cuda.Event()
+    e.record()
+    e.synchronize()
 
 class MyLogger:
     def __init__(self, logpath):
