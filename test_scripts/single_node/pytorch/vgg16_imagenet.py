@@ -13,7 +13,7 @@ import os
 import math
 from tqdm import tqdm
 
-from path_fix import get_logger, log_time
+from path_fix import get_logger, log_time, sync_e
 import json
 import time
 
@@ -188,8 +188,10 @@ def train(epoch):
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
                 target_batch = target[i:i + args.batch_size]
+                sync_e()
                 lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 output = model(data_batch)
+                sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
@@ -208,8 +210,10 @@ def train(epoch):
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
+                sync_e()
                 lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 loss.backward()
+                sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
