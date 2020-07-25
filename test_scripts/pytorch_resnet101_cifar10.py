@@ -17,7 +17,6 @@ import json
 import time
 from datetime import datetime
 import logging
-from path_fix import get_logger
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
