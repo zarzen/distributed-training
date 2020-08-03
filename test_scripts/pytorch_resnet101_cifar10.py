@@ -18,6 +18,7 @@ import time
 import timeit
 from datetime import datetime
 import logging
+import numpy as np
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
