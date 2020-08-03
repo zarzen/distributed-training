@@ -263,7 +263,7 @@ for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
-    time = timeit.timeit(train, epoch=epoch)
+    time = timeit.timeit(train(epoch))
     img_sec = args.batch_size * len(train_loader) / time
     log('Iter #%d: %.1f img/sec per %s' % (epoch, img_sec, device))
     img_secs.append(img_sec)
