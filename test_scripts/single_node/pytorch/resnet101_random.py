@@ -152,6 +152,11 @@ if resume_from_epoch > 0 and hvd.rank() == 0:
 
 # profile = LineProfiler()
 
+data_batch = torch.randn(args.batch_size, 3, 224, 224)
+target_batch = torch.LongTensor(args.batch_size).random_() % 1000
+if args.cuda:
+    data_batch, target_batch = data_batch.cuda(), target_batch.cuda()
+
 # @profile
 def train(epoch):
     model.train()
@@ -171,10 +176,6 @@ def train(epoch):
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
-                data_batch = torch.randn(args.batch_size, 3, 224, 224)
-                target_batch = torch.LongTensor(args.batch_size).random_() % 1000
-                if args.cuda:
-                    data_batch, target_batch = data_batch.cuda(), target_batch.cuda()
                 lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 output = model(data_batch)
                 lobj["dur"]=time.time()-lobj["ts"]
