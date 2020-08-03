@@ -12,12 +12,12 @@ import tensorboardX
 import os
 import math
 from tqdm import tqdm
-import time
-from datetime import datetime
+from logger import get_logger, log_time, sync_e
 import json
-import logging
-from path_fix import get_logger
+import time
 import timeit
+from datetime import datetime
+import logging
 import numpy as np
 
 # Training settings
@@ -87,11 +87,12 @@ verbose = 1 if hvd.rank() == 0 else 0
 
 # Horovod: write TensorBoard logs on first worker.
 # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
+log_writer = None
 
 model_logger = get_logger(hvd)
 
 # Horovod: limit # of CPU threads to be used per worker.
-__n_threads = int(os.cpu_count() / torch.cuda.device_count())
+__n_threads = 1
 print('torch num threads:', __n_threads)
 torch.set_num_threads(__n_threads)
 
@@ -115,7 +116,8 @@ train_loader = torch.utils.data.DataLoader(
     sampler=train_sampler, **kwargs)
 
 
-# Set up standard ResNet-50 model.
+
+# Set up standard ResNet-101 model.
 model = models.resnet101()
 
 if args.cuda:
@@ -133,10 +135,10 @@ optimizer = optim.SGD(model.parameters(),
 compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
 
 # Horovod: wrap optimizer with DistributedOptimizer.
-# optimizer = hvd.DistributedOptimizer(
-#     optimizer, named_parameters=model.named_parameters(),
-#     compression=compression,
-#     backward_passes_per_step=args.batches_per_allreduce)
+optimizer = hvd.DistributedOptimizer(
+    optimizer, named_parameters=model.named_parameters(),
+    compression=compression,
+    backward_passes_per_step=args.batches_per_allreduce)
 
 # Restore from a previous checkpoint, if initial_epoch is specified.
 # Horovod: restore on the first worker which will broadcast weights to other workers.
@@ -147,10 +149,15 @@ if resume_from_epoch > 0 and hvd.rank() == 0:
     optimizer.load_state_dict(checkpoint['optimizer'])
 
 # Horovod: broadcast parameters & optimizer state.
-# hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-# hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
 # profile = LineProfiler()
+
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
 
 # @profile
 def train(epoch):
@@ -167,7 +174,8 @@ def train(epoch):
             # if batch_idx >= 50:
             #     return
             if args.cuda:
-                data, target = data.cuda(), target.cuda()
+                with log_time(model_logger, "batch-data-tocuda", hvd):
+                    data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
@@ -201,6 +209,9 @@ def train(epoch):
                            'accuracy': 100. * train_accuracy.avg.item()})
             t.update(1)
 
+    if log_writer:
+        log_writer.add_scalar('train/loss', train_loss.avg, epoch)
+        log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
 # accuracy. Scale the learning rate `lr = base_lr` ---> `lr = base_lr * hvd.size()` during
@@ -254,6 +265,7 @@ class Metric(object):
         return self.sum / self.n
 
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+img_secs = []
 for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)
