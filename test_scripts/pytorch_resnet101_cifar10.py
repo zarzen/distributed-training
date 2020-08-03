@@ -153,6 +153,11 @@ hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
 # profile = LineProfiler()
 
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
+
 # @profile
 def train(epoch):
     model.train()
