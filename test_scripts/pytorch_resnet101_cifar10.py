@@ -270,15 +270,15 @@ for epoch in range(resume_from_epoch, args.epochs):
     # save_checkpoint(epoch)
     time = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
     img_sec = args.batch_size * len(train_loader) / time
-    log('Iter #%d: %.1f img/sec per %s' % (epoch, img_sec, device))
+    log('Iter #%d: %.1f img/sec per GPU' % (epoch, img_sec))
     img_secs.append(img_sec)
 
 # Results
 img_sec_mean = np.mean(img_secs[1:])
 img_sec_conf = 1.96 * np.std(img_secs[1:])
-log('Img/sec per %s: %.3f +-%.3f' % (device, img_sec_mean, img_sec_conf))
-log('Total img/sec on %d %s(s): %.1f +-%.1f' %
-    (hvd.size(), device, hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
+log('Img/sec per GPU: %.3f +-%.3f' % (img_sec_mean, img_sec_conf))
+log('Total img/sec on %d GPU(s): %.1f +-%.1f' %
+    (hvd.size(), hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
 
 lobj["dur"]=time.time()-lobj["ts"]
 model_logger.info(json.dumps(lobj))
