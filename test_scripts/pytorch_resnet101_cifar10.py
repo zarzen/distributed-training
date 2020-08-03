@@ -269,9 +269,9 @@ for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
-    time = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
-    img_sec = args.batch_size * len(train_loader) / time
-    log('\nIter #%d: %.1f img/sec per GPU' % (epoch, img_sec))
+    timeer_ = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
+    img_sec = args.batch_size * len(train_loader) / timeer_
+    log('\nIter #%d: %.1f img/sec per GPU in %.1f' % (epoch, img_sec, timeer_))
     img_secs.append(img_sec)
 
 # Results
