@@ -91,7 +91,7 @@ log_writer = None
 model_logger = get_logger(hvd)
 
 # Horovod: limit # of CPU threads to be used per worker.
-__n_threads = int(os.cpu_count() / torch.cuda.device_count())
+__n_threads = 1
 print('torch num threads:', __n_threads)
 torch.set_num_threads(__n_threads)
 
@@ -264,13 +264,14 @@ class Metric(object):
         return self.sum / self.n
 
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+img_secs = []
 for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
     time = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
     img_sec = args.batch_size * len(train_loader) / time
-    log('Iter #%d: %.1f img/sec per GPU' % (epoch, img_sec))
+    log('\nIter #%d: %.1f img/sec per GPU' % (epoch, img_sec))
     img_secs.append(img_sec)
 
 # Results
