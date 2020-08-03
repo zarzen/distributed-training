@@ -256,7 +256,7 @@ class Metric(object):
     @property
     def avg(self):
         return self.sum / self.n
-
+img_secs = []
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
 for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
