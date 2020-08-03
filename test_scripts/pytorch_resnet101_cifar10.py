@@ -15,6 +15,7 @@ from tqdm import tqdm
 from logger import get_logger, log_time, sync_e
 import json
 import time
+import timeit
 from datetime import datetime
 import logging
 
