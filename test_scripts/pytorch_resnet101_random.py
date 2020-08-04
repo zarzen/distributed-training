@@ -164,18 +164,17 @@ def log(s, nl=True):
     print(s, end='\n' if nl else '')
 
 # @profile
-def train(epoch):
+def train(times):
     model.train()
 
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for i in range(times):
         optimizer.zero_grad()
         # Split data into sub-batches of size batch_size
-        for i in range(0, len(data), args.batch_size):
-            output = model(data_batch)
+        output = model(data_batch)
 
-            loss = F.cross_entropy(output, target_batch)
-            # Average gradients among sub-batches
-            loss.backward()
+        loss = F.cross_entropy(output, target_batch)
+        # Average gradients among sub-batches
+        loss.backward()
         
         # Gradient is applied across all ranks
         optimizer.step()
@@ -242,6 +241,7 @@ for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
+    times = len(train_loader)
     timeer_ = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
     img_sec = args.batch_size * len(train_loader) / timeer_
     log('\nIter #%d: %.1f img/sec per GPU in %.1f' % (epoch, img_sec, timeer_))
