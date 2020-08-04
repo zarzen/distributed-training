@@ -165,7 +165,7 @@ def log(s, nl=True):
 
 # @profile
 def train(times):
-    model.train()
+    # model.train()
 
     for i in range(times):
         optimizer.zero_grad()
