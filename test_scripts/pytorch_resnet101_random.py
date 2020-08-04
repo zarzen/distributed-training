@@ -169,7 +169,6 @@ def train(epoch):
     train_sampler.set_epoch(epoch)
 
     for i in range(len(train_loader)):
-        adjust_learning_rate(epoch, batch_idx)
         # if batch_idx >= 50:
         #     return
         optimizer.zero_grad()
