@@ -128,7 +128,8 @@ if args.cuda:
 # Gradient Accumulation: scale learning rate by batches_per_allreduce
 optimizer = optim.SGD(model.parameters(),
                       lr=(args.base_lr *
-                          args.batches_per_allreduce * hvd.size()))
+                          args.batches_per_allreduce * hvd.size()),
+                      momentum=args.momentum, weight_decay=args.wd)
 
 # Horovod: (optional) compression algorithm.
 compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
@@ -168,7 +169,7 @@ def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
 
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for i in range(len(train_loader)):
         # if batch_idx >= 50:
         #     return
         optimizer.zero_grad()
