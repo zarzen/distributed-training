@@ -168,7 +168,7 @@ def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
 
-    for i in range(len(train_loader)):
+    for batch_idx, (data, target) in enumerate(train_loader):
         # if batch_idx >= 50:
         #     return
         optimizer.zero_grad()
