@@ -166,49 +166,19 @@ def log(s, nl=True):
 # @profile
 def train(epoch):
     model.train()
-    train_sampler.set_epoch(epoch)
-    train_loss = Metric('train_loss')
-    train_accuracy = Metric('train_accuracy')
 
-    with tqdm(total=len(train_loader),
-              desc='Train Epoch     #{}'.format(epoch + 1),
-              disable=not verbose) as t:
-        for batch_idx, (data, target) in enumerate(train_loader):
-            adjust_learning_rate(epoch, batch_idx)
-            # if batch_idx >= 50:
-            #     return
-            if args.cuda:
-                    data, target = data.cuda(), target.cuda()
-            optimizer.zero_grad()
-            # Split data into sub-batches of size batch_size
-            for i in range(0, len(data), args.batch_size):
-                lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                output = model(data_batch)
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
+    for batch_idx, (data, target) in enumerate(train_loader):
+        optimizer.zero_grad()
+        # Split data into sub-batches of size batch_size
+        for i in range(0, len(data), args.batch_size):
+            output = model(data_batch)
 
-                lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                train_accuracy.update(accuracy(output, target_batch))
-                loss = F.cross_entropy(output, target_batch)
-                train_loss.update(loss)
-                # Average gradients among sub-batches
-                loss.div_(math.ceil(float(len(data)) / args.batch_size))
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
-                lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                loss.backward()
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
-            
-            # Gradient is applied across all ranks
-            lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-            optimizer.step()
-            lobj["dur"]=time.time()-lobj["ts"]
-            model_logger.info(json.dumps(lobj))
-
-            t.set_postfix({'loss': train_loss.avg.item(),
-                           'accuracy': 100. * train_accuracy.avg.item()})
-            t.update(1)
+            loss = F.cross_entropy(output, target_batch)
+            # Average gradients among sub-batches
+            loss.backward()
+        
+        # Gradient is applied across all ranks
+        optimizer.step()
 
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
