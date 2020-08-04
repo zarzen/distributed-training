@@ -61,56 +61,12 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 allreduce_batch_size = args.batch_size * args.batches_per_allreduce
 
 hvd.init()
-torch.manual_seed(args.seed)
 
 if args.cuda:
     # Horovod: pin GPU to local rank.
     torch.cuda.set_device(hvd.local_rank())
-    torch.cuda.manual_seed(args.seed)
 
 cudnn.benchmark = True
-
-# If set > 0, will resume training from a given checkpoint.
-resume_from_epoch = 0
-for try_epoch in range(args.epochs, 0, -1):
-    if os.path.exists(args.checkpoint_format.format(epoch=try_epoch)):
-        resume_from_epoch = try_epoch
-        break
-
-# Horovod: broadcast resume_from_epoch from rank 0 (which will have
-# checkpoints) to other ranks.
-resume_from_epoch = hvd.broadcast(torch.tensor(resume_from_epoch), root_rank=0,
-                                  name='resume_from_epoch').item()
-
-# Horovod: write TensorBoard logs on first worker.
-# log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
-
-
-# Horovod: limit # of CPU threads to be used per worker.
-__n_threads = int(os.cpu_count() / torch.cuda.device_count())
-print('torch num threads:', __n_threads)
-torch.set_num_threads(__n_threads)
-
-kwargs = {'num_workers': __n_threads, 'pin_memory': True} if args.cuda else {}
-transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
-print('cwd:', os.getcwd())
-train_dataset = torchvision.datasets.CIFAR10(
-    root='~/distributed-training/data', train=True,
-    download=False, transform=transform)
-
-# Horovod: use DistributedSampler to partition data among workers. Manually specify
-# `num_replicas=hvd.size()` and `rank=hvd.rank()`.
-train_sampler = torch.utils.data.distributed.DistributedSampler(
-    train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-
-train_loader = torch.utils.data.DataLoader(
-    train_dataset, batch_size=allreduce_batch_size,
-    sampler=train_sampler, **kwargs)
-
-
 
 # Set up standard ResNet-101 model.
 model = models.resnet101()
@@ -133,14 +89,6 @@ compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.n
 optimizer = hvd.DistributedOptimizer(
     optimizer, named_parameters=model.named_parameters(),
     compression=compression)
-
-# Restore from a previous checkpoint, if initial_epoch is specified.
-# Horovod: restore on the first worker which will broadcast weights to other workers.
-if resume_from_epoch > 0 and hvd.rank() == 0:
-    filepath = args.checkpoint_format.format(epoch=resume_from_epoch)
-    checkpoint = torch.load(filepath)
-    model.load_state_dict(checkpoint['model'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
 
 # Horovod: broadcast parameters & optimizer state.
 hvd.broadcast_parameters(model.state_dict(), root_rank=0)
@@ -172,6 +120,7 @@ def train():
     
     # Gradient is applied across all ranks
     optimizer.step()
+
 
 def log(s, nl=True):
     if hvd.rank() != 0:
