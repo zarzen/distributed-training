@@ -128,7 +128,7 @@ def log(s, nl=True):
     print(s, end='\n' if nl else '')
 
 img_secs = []
-for epoch in range(resume_from_epoch, args.epochs):
+for epoch in range(0, args.epochs):
     # train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
