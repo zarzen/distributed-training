@@ -115,7 +115,8 @@ train_loader = torch.utils.data.DataLoader(
     sampler=train_sampler, **kwargs)
 
 
-# Set up standard ResNet-50 model.
+
+# Set up standard ResNet-101 model.
 model = models.resnet101()
 
 if args.cuda:
@@ -156,6 +157,11 @@ data_batch = torch.randn(args.batch_size, 3, 224, 224)
 target_batch = torch.LongTensor(args.batch_size).random_() % 1000
 if args.cuda:
     data_batch, target_batch = data_batch.cuda(), target_batch.cuda()
+
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
 
 # @profile
 def train(epoch):
@@ -259,8 +265,9 @@ class Metric(object):
     @property
     def avg(self):
         return self.sum / self.n
-img_secs = []
+
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+img_secs = []
 for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)

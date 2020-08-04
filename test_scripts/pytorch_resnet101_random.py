@@ -13,11 +13,11 @@ import os
 import math
 from tqdm import tqdm
 from logger import get_logger, log_time, sync_e
-import json
 import time
-import timeit
 from datetime import datetime
+import json
 import logging
+import timeit
 import numpy as np
 
 # Training settings
@@ -87,12 +87,11 @@ verbose = 1 if hvd.rank() == 0 else 0
 
 # Horovod: write TensorBoard logs on first worker.
 # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
-log_writer = None
 
 model_logger = get_logger(hvd)
 
 # Horovod: limit # of CPU threads to be used per worker.
-__n_threads = 1
+__n_threads = int(os.cpu_count() / torch.cuda.device_count())
 print('torch num threads:', __n_threads)
 torch.set_num_threads(__n_threads)
 
@@ -154,6 +153,11 @@ hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
 # profile = LineProfiler()
 
+data_batch = torch.randn(args.batch_size, 3, 224, 224)
+target_batch = torch.LongTensor(args.batch_size).random_() % 1000
+if args.cuda:
+    data_batch, target_batch = data_batch.cuda(), target_batch.cuda()
+
 def log(s, nl=True):
     if hvd.rank() != 0:
         return
@@ -174,13 +178,10 @@ def train(epoch):
             # if batch_idx >= 50:
             #     return
             if args.cuda:
-                with log_time(model_logger, "batch-data-tocuda", hvd):
                     data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
-                data_batch = data[i:i + args.batch_size]
-                target_batch = target[i:i + args.batch_size]
                 lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 output = model(data_batch)
                 lobj["dur"]=time.time()-lobj["ts"]
@@ -209,9 +210,6 @@ def train(epoch):
                            'accuracy': 100. * train_accuracy.avg.item()})
             t.update(1)
 
-    if log_writer:
-        log_writer.add_scalar('train/loss', train_loss.avg, epoch)
-        log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
 # accuracy. Scale the learning rate `lr = base_lr` ---> `lr = base_lr * hvd.size()` during
@@ -238,6 +236,10 @@ def accuracy(output, target):
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
 
 def save_checkpoint(epoch):
     if hvd.rank() == 0:
