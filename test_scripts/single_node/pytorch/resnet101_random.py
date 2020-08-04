@@ -166,8 +166,15 @@ def log(s, nl=True):
 # @profile
 def train(epoch):
     model.train()
+    train_sampler.set_epoch(epoch)
 
     for batch_idx, (data, target) in enumerate(train_loader):
+        adjust_learning_rate(epoch, batch_idx)
+        # if batch_idx >= 50:
+        #     return
+        if args.cuda:
+            with log_time(model_logger, "batch-data-tocuda", hvd):
+                data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
         # Split data into sub-batches of size batch_size
         for i in range(0, len(data), args.batch_size):
@@ -175,10 +182,12 @@ def train(epoch):
 
             loss = F.cross_entropy(output, target_batch)
             # Average gradients among sub-batches
+            loss.div_(math.ceil(float(len(data)) / args.batch_size))
             loss.backward()
         
         # Gradient is applied across all ranks
         optimizer.step()
+
 
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
@@ -206,10 +215,6 @@ def accuracy(output, target):
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
-def log(s, nl=True):
-    if hvd.rank() != 0:
-        return
-    print(s, end='\n' if nl else '')
 
 def save_checkpoint(epoch):
     if hvd.rank() == 0:
@@ -236,7 +241,12 @@ class Metric(object):
     def avg(self):
         return self.sum / self.n
 
-lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
+
 img_secs = []
 for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
@@ -253,8 +263,5 @@ img_sec_conf = 1.96 * np.std(img_secs[1:])
 log('Img/sec per GPU: %.3f +-%.3f' % (img_sec_mean, img_sec_conf))
 log('Total img/sec on %d GPU(s): %.1f +-%.1f' %
     (hvd.size(), hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
-
-lobj["dur"]=time.time()-lobj["ts"]
-model_logger.info(json.dumps(lobj))
 
 # profile.print_stats()
