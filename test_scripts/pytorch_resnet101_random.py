@@ -168,22 +168,17 @@ def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
 
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for i in range(len(train_loader)):
         adjust_learning_rate(epoch, batch_idx)
         # if batch_idx >= 50:
         #     return
-        if args.cuda:
-            with log_time(model_logger, "batch-data-tocuda", hvd):
-                data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
         # Split data into sub-batches of size batch_size
-        for i in range(0, len(data), args.batch_size):
-            output = model(data_batch)
+        output = model(data_batch)
 
-            loss = F.cross_entropy(output, target_batch)
-            # Average gradients among sub-batches
-            loss.div_(math.ceil(float(len(data)) / args.batch_size))
-            loss.backward()
+        loss = F.cross_entropy(output, target_batch)
+        # Average gradients among sub-batches
+        loss.backward()
         
         # Gradient is applied across all ranks
         optimizer.step()
