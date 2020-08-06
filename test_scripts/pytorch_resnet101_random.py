@@ -168,15 +168,25 @@ def log(s, nl=True):
 def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
+    train_loss = Metric('train_loss')
+    train_accuracy = Metric('train_accuracy')
 
-    for i in range(len(train_loader)):
+    for batch_idx, (data, target) in enumerate(train_loader):
+
         # if batch_idx >= 50:
+        adjust_learning_rate(epoch, batch_idx)
         #     return
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+
         optimizer.zero_grad()
         # Split data into sub-batches of size batch_size
         output = model(data_batch)
-
+        _acc = accuracy(output, target_batch)
+        train_accuracy.update(_acc)
         loss = F.cross_entropy(output, target_batch)
+        train_loss.update(loss)
+
         # Average gradients among sub-batches
         loss.backward()
         
