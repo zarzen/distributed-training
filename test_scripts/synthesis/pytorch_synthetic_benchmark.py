@@ -41,6 +41,9 @@ parser.add_argument('--batch-size', type=int, default=32,
 parser.add_argument('--world-size', type=int, default=32,
                     help='world size')
 
+parser.add_argument('--num-gpu', type=int, default=1,
+                    help='num of gpu')
+
 parser.add_argument('--world-id', type=int, default=0,
                     help='world id')
 
@@ -72,7 +75,7 @@ dist_url = args.url_port
 
 # Initialize Process Group 初始化进程组
 # v1 - init with url  使用 url 初始化
-dist.init_process_group(backend=dist_backend, init_method=dist_url, rank=int(args.world_id), world_size=world_size)
+dist.init_process_group(backend=dist_backend, init_method=dist_url, rank=int(args.world_id * args.num_gpu + args.local_rank), world_size=world_size)
 # v2 - init with file 使用文件初始化
 # dist.init_process_group(backend="nccl", init_method="file:///home/ubuntu/pt-distributed-tutorial/trainfile", rank=int(sys.argv[1]), world_size=world_size)
 # v3 - init with environment variables 使用环境变量初始化
@@ -105,7 +108,7 @@ def benchmark_step():
 
 
 def log(s, nl=True):
-    if args.world_id != 0:
+    if args.world_id != 0 or args.local_rank != 0:
         return
     print(s, end='\n' if nl else '')
 
