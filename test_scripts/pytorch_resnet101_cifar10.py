@@ -15,8 +15,10 @@ from tqdm import tqdm
 from logger import get_logger, log_time, sync_e
 import json
 import time
+import timeit
 from datetime import datetime
 import logging
+import numpy as np
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
@@ -90,7 +92,7 @@ log_writer = None
 model_logger = get_logger(hvd)
 
 # Horovod: limit # of CPU threads to be used per worker.
-__n_threads = int(os.cpu_count() / torch.cuda.device_count())
+__n_threads = 1
 print('torch num threads:', __n_threads)
 torch.set_num_threads(__n_threads)
 
@@ -152,6 +154,11 @@ hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
 # profile = LineProfiler()
 
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
+
 # @profile
 def train(epoch):
     model.train()
@@ -191,6 +198,7 @@ def train(epoch):
                 loss.backward()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
+                break
             
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
@@ -258,10 +266,22 @@ class Metric(object):
         return self.sum / self.n
 
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+img_secs = []
 for epoch in range(resume_from_epoch, args.epochs):
-    train(epoch)
+    # train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
+    timeer_ = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
+    img_sec = args.batch_size * len(train_loader) / timeer_
+    log('\nIter #%d: %.1f img/sec per GPU in %.1f' % (epoch, img_sec, timeer_))
+    img_secs.append(img_sec)
+
+# Results
+img_sec_mean = np.mean(img_secs[1:])
+img_sec_conf = 1.96 * np.std(img_secs[1:])
+log('Img/sec per GPU: %.3f +-%.3f' % (img_sec_mean, img_sec_conf))
+log('Total img/sec on %d GPU(s): %.1f +-%.1f' %
+    (hvd.size(), hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
 
 lobj["dur"]=time.time()-lobj["ts"]
 model_logger.info(json.dumps(lobj))

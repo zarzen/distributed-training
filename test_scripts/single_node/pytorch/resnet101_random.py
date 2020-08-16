@@ -115,7 +115,8 @@ train_loader = torch.utils.data.DataLoader(
     sampler=train_sampler, **kwargs)
 
 
-# Set up standard ResNet-50 model.
+
+# Set up standard ResNet-101 model.
 model = models.resnet101()
 
 if args.cuda:
@@ -126,8 +127,7 @@ if args.cuda:
 # Gradient Accumulation: scale learning rate by batches_per_allreduce
 optimizer = optim.SGD(model.parameters(),
                       lr=(args.base_lr *
-                          args.batches_per_allreduce * hvd.size()),
-                      momentum=args.momentum, weight_decay=args.wd)
+                          args.batches_per_allreduce * hvd.size()))
 
 # Horovod: (optional) compression algorithm.
 compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
@@ -152,54 +152,38 @@ if resume_from_epoch > 0 and hvd.rank() == 0:
 
 # profile = LineProfiler()
 
+data_batch = torch.randn(args.batch_size, 3, 224, 224)
+target_batch = torch.LongTensor(args.batch_size).random_() % 1000
+if args.cuda:
+    data_batch, target_batch = data_batch.cuda(), target_batch.cuda()
+
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
+
 # @profile
 def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
-    train_loss = Metric('train_loss')
-    train_accuracy = Metric('train_accuracy')
 
-    with tqdm(total=len(train_loader),
-              desc='Train Epoch     #{}'.format(epoch + 1),
-              disable=not verbose) as t:
-        for batch_idx, (data, target) in enumerate(train_loader):
-            adjust_learning_rate(epoch, batch_idx)
-            # if batch_idx >= 50:
-            #     return
-            if args.cuda:
-                data, target = data.cuda(), target.cuda()
-            optimizer.zero_grad()
-            # Split data into sub-batches of size batch_size
-            for i in range(0, len(data), args.batch_size):
-                data_batch = data[i:i + args.batch_size]
-                target_batch = target[i:i + args.batch_size]
-                lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                output = model(data_batch)
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
+    for batch_idx, (data, target) in enumerate(train_loader):
+        adjust_learning_rate(epoch, batch_idx)
+        # if batch_idx >= 50:
+        #     return
+        optimizer.zero_grad()
+        # Split data into sub-batches of size batch_size
 
-                lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                train_accuracy.update(accuracy(output, target_batch))
-                loss = F.cross_entropy(output, target_batch)
-                train_loss.update(loss)
-                # Average gradients among sub-batches
-                loss.div_(math.ceil(float(len(data)) / args.batch_size))
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
-                lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                loss.backward()
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
-            
-            # Gradient is applied across all ranks
-            lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-            optimizer.step()
-            lobj["dur"]=time.time()-lobj["ts"]
-            model_logger.info(json.dumps(lobj))
+        output = model(data_batch)
 
-            t.set_postfix({'loss': train_loss.avg.item(),
-                           'accuracy': 100. * train_accuracy.avg.item()})
-            t.update(1)
+        loss = F.cross_entropy(output, target_batch)
+        # Average gradients among sub-batches
+        loss.div_(math.ceil(float(len(data)) / args.batch_size))
+        loss.backward()
+        
+        # Gradient is applied across all ranks
+        optimizer.step()
+
 
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
@@ -227,10 +211,6 @@ def accuracy(output, target):
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
-def log(s, nl=True):
-    if hvd.rank() != 0:
-        return
-    print(s, end='\n' if nl else '')
 
 def save_checkpoint(epoch):
     if hvd.rank() == 0:
@@ -256,8 +236,14 @@ class Metric(object):
     @property
     def avg(self):
         return self.sum / self.n
+
+
+def log(s, nl=True):
+    if hvd.rank() != 0:
+        return
+    print(s, end='\n' if nl else '')
+
 img_secs = []
-lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
 for epoch in range(resume_from_epoch, args.epochs):
     # train(epoch)
     # validate(epoch)
@@ -273,8 +259,5 @@ img_sec_conf = 1.96 * np.std(img_secs[1:])
 log('Img/sec per GPU: %.3f +-%.3f' % (img_sec_mean, img_sec_conf))
 log('Total img/sec on %d GPU(s): %.1f +-%.1f' %
     (hvd.size(), hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
-
-lobj["dur"]=time.time()-lobj["ts"]
-model_logger.info(json.dumps(lobj))
 
 # profile.print_stats()
