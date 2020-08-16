@@ -44,7 +44,7 @@ parser.add_argument('--world-size', type=int, default=32,
 parser.add_argument('--world-id', type=int, default=0,
                     help='world id')
 
-parser.add_argument('--local-id', type=int, default=0,
+parser.add_argument('--local_rank', type=int, default=0,
                     help='local id')
 
 parser.add_argument('--num-warmup-batches', type=int, default=10,
@@ -79,7 +79,7 @@ dist.init_process_group(backend=dist_backend, init_method=dist_url, rank=int(arg
 # dist.init_process_group(backend="nccl", init_method="env://", rank=int(sys.argv[1]), world_size=world_size)
 
 # Establish Local Rank and set device on this node 设置节点的本地化编号和设备
-local_rank = int(args.local_id)
+local_rank = int(args.local_rank)
 dp_device_ids = [local_rank]
 torch.cuda.set_device(local_rank)
 
