@@ -51,38 +51,38 @@ def train(epoch):
             # number of batchs limit
             if batch_idx >= 50:
                 return 
-                with log_time(model_logger, "batch-data-tocuda", args.world_id):
-                    data, target = data.cuda(), target.cuda()
+            with log_time(model_logger, "batch-data-tocuda", args.local_rank):
+                data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
                 target_batch = target[i:i + args.batch_size]
                 # sync_e()
-                lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": args.world_id, "dur": 0}
+                lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": args.local_rank, "dur": 0}
                 output = model(data_batch)
                 # event record 
                 # sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
-                lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": args.world_id, "dur": 0}
-                with log_time(model_logger, "horovod-acc-comp", args.world_id):
+                lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": args.local_rank, "dur": 0}
+                with log_time(model_logger, "horovod-acc-comp", args.local_rank):
                     _acc = accuracy(output, target_batch)
-                with log_time(model_logger, "horovod-acc-update", args.world_id):
+                with log_time(model_logger, "horovod-acc-update", args.local_rank):
                     train_accuracy.update(_acc)
-                with log_time(model_logger, "torch-loss-comp", args.world_id):
+                with log_time(model_logger, "torch-loss-comp", args.local_rank):
                     loss = F.cross_entropy(output, target_batch)
-                with log_time(model_logger, "horovod-loss-update", args.world_id):
+                with log_time(model_logger, "horovod-loss-update", args.local_rank):
                     train_loss.update(loss)
                 # Average gradients among sub-batches
-                with log_time(model_logger, "avg-sub-batches-loss", args.world_id):
+                with log_time(model_logger, "avg-sub-batches-loss", args.local_rank):
                     loss.div_(math.ceil(float(len(data)) / args.batch_size))
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
                 # sync_e()
-                lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": args.world_id, "dur": 0}
+                lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": args.local_rank, "dur": 0}
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
                 # sync_e()
@@ -90,7 +90,7 @@ def train(epoch):
                 model_logger.info(json.dumps(lobj))
 
             # Gradient is applied across all ranks
-            lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": args.world_id, "dur": 0}
+            lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": args.local_rank, "dur": 0}
             optimizer.step()
             lobj["dur"]=time.time()-lobj["ts"]
             model_logger.info(json.dumps(lobj))
@@ -156,7 +156,7 @@ def accuracy(output, target):
 
 
 def save_checkpoint(epoch):
-    if args.world_id == 0:
+    if args.world_id * args.num_gpu + args.local_rank == 0:
         filepath = args.checkpoint_format.format(epoch=epoch + 1)
         state = {
             'model': model.state_dict(),
@@ -179,7 +179,7 @@ def init(args):
 
     # Initialize Process Group 初始化进程组
     # v1 - init with url  使用 url 初始化
-    dist.init_process_group(backend=dist_backend, init_method=dist_url, rank=int(args.world_id), world_size=world_size)
+    dist.init_process_group(backend=dist_backend, init_method=dist_url, rank=int(args.world_id * args.num_gpu + args.local_rank), world_size=world_size)
     # v2 - init with file 使用文件初始化
     # dist.init_process_group(backend="nccl", init_method="file:///home/ubuntu/pt-distributed-tutorial/trainfile", rank=int(sys.argv[1]), world_size=world_size)
     # v3 - init with environment variables 使用环境变量初始化
@@ -224,6 +224,8 @@ if __name__ == '__main__':
                         help='number of batches processed locally before '
                             'executing allreduce across workers; it multiplies '
                             'total batch size.')
+    parser.add_argument('--num-gpu', type=int, default=1,
+                        help='num of gpu')
 
     # Default settings from https://arxiv.org/abs/1706.02677.
     parser.add_argument('--url-port', type=str, default='tcp://172.31.22.234:23456',
@@ -284,13 +286,13 @@ if __name__ == '__main__':
     torch.cuda.set_device(local_rank)
 
     # Horovod: print logs on the first worker.
-    verbose = 1 if args.world_id == 0 else 0
+    verbose = 1 if args.world_id * args.num_gpu + args.local_rank == 0 else 0
 
     # Horovod: write TensorBoard logs on first worker.
     # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
     log_writer = None
 
-    model_logger = get_logger(args.world_id)
+    model_logger = get_logger(args.local_rank)
 
     # Horovod: limit # of CPU threads to be used per worker.
     torch.set_num_threads(4)
@@ -308,7 +310,7 @@ if __name__ == '__main__':
     # Horovod: use DistributedSampler to partition data among workers. Manually specify
     # `num_replicas=hvd.size()` and `rank=hvd.rank()`.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
-        train_dataset, num_replicas=args.world_size, rank=args.world_id)
+        train_dataset, num_replicas=args.world_size, rank=args.world_id * args.num_gpu + args.local_rank)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=allreduce_batch_size,
         sampler=train_sampler, **kwargs)
@@ -323,7 +325,7 @@ if __name__ == '__main__':
                                                     std=[0.229, 0.224, 0.225])
                             ]))
     val_sampler = torch.utils.data.distributed.DistributedSampler(
-        val_dataset, num_replicas=args.world_size, rank=args.world_id)
+        val_dataset, num_replicas=args.world_size, rank=args.world_id * args.num_gpu + args.local_rank)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size,
                                             sampler=val_sampler, **kwargs)
 
@@ -352,13 +354,13 @@ if __name__ == '__main__':
 
     # Restore from a previous checkpoint, if initial_epoch is specified.
     # Horovod: restore on the first worker which will broadcast weights to other workers.
-    if resume_from_epoch > 0 and args.world_id == 0:
+    if resume_from_epoch > 0 and args.world_id * args.num_gpu + args.local_rank == 0:
         filepath = args.checkpoint_format.format(epoch=resume_from_epoch)
         checkpoint = torch.load(filepath)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
 
-    lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": args.world_id, "dur": 0}
+    lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": args.local_rank, "dur": 0}
     for epoch in range(resume_from_epoch, args.epochs):
         train(epoch)
         # validate(epoch)
