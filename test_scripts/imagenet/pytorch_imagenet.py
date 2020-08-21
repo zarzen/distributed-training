@@ -41,7 +41,7 @@ def train(epoch):
         for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(epoch, batch_idx)
             # number of batchs limit
-            if batch_idx >= 50:
+            if batch_idx >= 200:
                 return 
             with log_time(model_logger, "batch-data-tocuda", args.local_rank):
                 data, target = data.cuda(), target.cuda()
@@ -185,9 +185,7 @@ class Metric(object):
         self.n = torch.tensor(0.)
 
     def update(self, val):
-        new_sum = val.detach().cuda()
-        dist.all_reduce(new_sum)
-        self.sum += torch.div(new_sum, args.world_size)
+        self.sum += val
         self.n += 1
 
     @property
@@ -238,7 +236,7 @@ if __name__ == '__main__':
                         help='number of epochs to train')
     parser.add_argument('--base-lr', type=float, default=0.0125,
                         help='learning rate for a single GPU')
-    parser.add_argument('--warmup-epochs', type=float, default=5,
+    parser.add_argument('--warmup-epochs', type=float, default=2,
                         help='number of warmup epochs')
     parser.add_argument('--momentum', type=float, default=0.9,
                         help='SGD momentum')

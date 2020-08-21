@@ -45,7 +45,7 @@ parser.add_argument('--epochs', type=int, default=90,
                     help='number of epochs to train')
 parser.add_argument('--base-lr', type=float, default=0.0125,
                     help='learning rate for a single GPU')
-parser.add_argument('--warmup-epochs', type=float, default=5,
+parser.add_argument('--warmup-epochs', type=float, default=2,
                     help='number of warmup epochs')
 parser.add_argument('--momentum', type=float, default=0.9,
                     help='SGD momentum')
@@ -301,7 +301,7 @@ class Metric(object):
         self.n = torch.tensor(0.)
 
     def update(self, val):
-        self.sum += hvd.allreduce(val.detach().cuda(), name=self.name)
+        self.sum += val
         self.n += 1
 
     @property
