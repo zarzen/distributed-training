@@ -171,56 +171,39 @@ data_batch, target_batch = data.cuda(), target.cuda()
 
 def train(epoch):
     model.train()
-    train_sampler.set_epoch(epoch)
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
 
     with tqdm(total=len(train_loader),
               desc='Train Epoch     #{}'.format(epoch + 1),
               disable=not verbose) as t:
-        for batch_idx, (data, target) in enumerate(train_loader):
-            adjust_learning_rate(epoch, batch_idx)
-            # number of batchs limit
-            if batch_idx >= 500:
-                return 
+        for batch_idx in range(500):
 
-            if args.cuda:
-                with log_time(model_logger, "batch-data-tocuda", hvd):
-                    data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
-            # Split data into sub-batches of size batch_size
-            for i in range(0, len(data), args.batch_size):
-                data_batch = data[i:i + args.batch_size]
-                target_batch = target[i:i + args.batch_size]
-                # sync_e()
-                lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                output = model(data_batch)
-                # event record 
-                # sync_e()
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
 
-                lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                with log_time(model_logger, "horovod-acc-comp", hvd):
-                    _acc = accuracy(output, target_batch)
-                with log_time(model_logger, "horovod-acc-update", hvd):
-                    train_accuracy.update(_acc)
-                with log_time(model_logger, "torch-loss-comp", hvd):
-                    loss = F.cross_entropy(output, target_batch)
-                with log_time(model_logger, "horovod-loss-update", hvd):
-                    train_loss.update(loss)
-                # Average gradients among sub-batches
-                with log_time(model_logger, "avg-sub-batches-loss", hvd):
-                    loss.div_(math.ceil(float(len(data)) / args.batch_size))
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
+            # sync_e()
+            lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+            output = model(data_batch)
+            # event record 
+            # sync_e()
+            lobj["dur"]=time.time()-lobj["ts"]
+            model_logger.info(json.dumps(lobj))
 
-                # sync_e()
-                lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                loss.backward()
-                # sync_e()
-                lobj["dur"]=time.time()-lobj["ts"]
-                model_logger.info(json.dumps(lobj))
+            lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+            with log_time(model_logger, "torch-loss-comp", hvd):
+                loss = F.cross_entropy(output, target_batch)
+            # Average gradients among sub-batches
+            with log_time(model_logger, "avg-sub-batches-loss", hvd):
+                loss.div_(math.ceil(float(len(data)) / args.batch_size))
+            lobj["dur"]=time.time()-lobj["ts"]
+            model_logger.info(json.dumps(lobj))
+
+            # sync_e()
+            lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+            loss.backward()
+            # sync_e()
+            lobj["dur"]=time.time()-lobj["ts"]
+            model_logger.info(json.dumps(lobj))
 
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
