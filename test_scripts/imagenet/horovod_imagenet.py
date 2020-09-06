@@ -219,7 +219,7 @@ def train(epoch):
 
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-            optimizer.step()
+            optimizer.step(if_report=batch_idx%100==50)
             lobj["dur"]=time.time()-lobj["ts"]
             model_logger.info(json.dumps(lobj))
 

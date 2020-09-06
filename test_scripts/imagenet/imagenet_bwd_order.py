@@ -211,12 +211,13 @@ def train(epoch):
                 # sync_e()
                 lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": 0, "dur": 0}
                 loss.backward()
-                Flag_event.record()
-                torch.cuda.synchronize()
-                time_dict = {n : allEvent[n].elapsed_time(Flag_event) for n, p in model.named_parameters()}
-                time_dict = sorted(time_dict.items(), key=lambda x: x[1], reverse=True)
-                pprint("new step", stream=fout)
-                pprint(time_dict, stream=fout)
+                if batch_index % 100 == 50:
+                    Flag_event.record()
+                    torch.cuda.synchronize()
+                    time_dict = {n : allEvent[n].elapsed_time(Flag_event) for n, p in model.named_parameters()}
+                    time_dict = sorted(time_dict.items(), key=lambda x: x[1], reverse=True)
+                    pprint("new step", stream=fout)
+                    pprint(time_dict, stream=fout)
                 # sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
