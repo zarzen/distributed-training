@@ -14,6 +14,7 @@ from tqdm import tqdm
 from logger import get_logger, log_time, sync_e
 import json
 import time
+import numpy as np
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
@@ -160,6 +161,32 @@ if resume_from_epoch > 0:
 # hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 # hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
+step1 = torch.cuda.Event(enable_timing=True)
+step2 = torch.cuda.Event(enable_timing=True)
+step3 = torch.cuda.Event(enable_timing=True)
+step4 = torch.cuda.Event(enable_timing=True)
+step5 = torch.cuda.Event(enable_timing=True)
+step6 = torch.cuda.Event(enable_timing=True)
+step7 = torch.cuda.Event(enable_timing=True)
+step8 = torch.cuda.Event(enable_timing=True)
+step9 = torch.cuda.Event(enable_timing=True)
+step10 = torch.cuda.Event(enable_timing=True)
+step11 = torch.cuda.Event(enable_timing=True)
+step12 = torch.cuda.Event(enable_timing=True)
+step13 = torch.cuda.Event(enable_timing=True)
+step14 = torch.cuda.Event(enable_timing=True)
+
+time_load_data = []
+time_zero_grad = []
+time_model = []
+time_accu = []
+time_accu_update = []
+time_loss = []
+time_loss_update = []
+time_back = []
+time_step = []
+time_batch = []
+
 def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
@@ -170,7 +197,6 @@ def train(epoch):
               desc='Train Epoch     #{}'.format(epoch + 1),
               disable=not verbose) as t:
         for batch_idx, (data, target) in enumerate(train_loader):
-            adjust_learning_rate(epoch, batch_idx)
             # number of batchs limit
             if batch_idx >= 500:
                 return
@@ -178,7 +204,11 @@ def train(epoch):
             if args.cuda:
                 with log_time(model_logger, "batch-data-tocuda", 0):
                     data, target = data.cuda(), target.cuda()
+            step2.record()
+            adjust_learning_rate(epoch, batch_idx)
+            step3.record()
             optimizer.zero_grad()
+            step4.record()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
@@ -186,19 +216,26 @@ def train(epoch):
                 # sync_e()
                 lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": 0, "dur": 0}
                 output = model(data_batch)
+                step5.record()
+                # event record 
                 # sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
                 lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": 0, "dur": 0}
+                step6.record()
                 with log_time(model_logger, "horovod-acc-comp", 0):
                     _acc = accuracy(output, target_batch)
+                step7.record()
                 with log_time(model_logger, "horovod-acc-update", 0):
                     train_accuracy.update(_acc)
+                step8.record()
                 with log_time(model_logger, "torch-loss-comp", 0):
                     loss = F.cross_entropy(output, target_batch)
+                step9.record()
                 with log_time(model_logger, "horovod-loss-update", 0):
                     train_loss.update(loss)
+                step10.record()
                 # Average gradients among sub-batches
                 with log_time(model_logger, "avg-sub-batches-loss", 0):
                     loss.div_(math.ceil(float(len(data)) / args.batch_size))
@@ -207,14 +244,31 @@ def train(epoch):
 
                 # sync_e()
                 lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": 0, "dur": 0}
+                step11.record()
                 loss.backward()
+                step12.record()
                 # sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": 0, "dur": 0}
+            step13.record()
             optimizer.step()
+            step14.record()
+            torch.cuda.synchronize()
+            if batch_idx % 10 == 9:
+                time_load_data.append(step2.elapsed_time(step1))
+                time_zero_grad.append(step4.elapsed_time(step3))
+                time_model.append(step5.elapsed_time(step4))
+                time_accu.append(step7.elapsed_time(step6))
+                time_accu_update.append(step8.elapsed_time(step7))
+                time_loss.append(step9.elapsed_time(step8))
+                time_loss_update.append(step10.elapsed_time(step9))
+                time_back.append(step12.elapsed_time(step11))
+                time_step.append(step14.elapsed_time(step13))
+                time_batch.append(step14.elapsed_time(step1))
+            step1.record()
             lobj["dur"]=time.time()-lobj["ts"]
             model_logger.info(json.dumps(lobj))
 
@@ -321,3 +375,4 @@ if hvd.rank() == 0:
     print("back", np.mean(time_back[5:]))
     print("step", np.mean(time_step[5:]))
     print("batch", np.mean(time_batch[5:]))
+    
