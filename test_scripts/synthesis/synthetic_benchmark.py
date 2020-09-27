@@ -25,7 +25,7 @@ parser.add_argument('--num-warmup-batches', type=int, default=10,
 parser.add_argument('--num-batches-per-iter', type=int, default=10,
                     help='number of batches per benchmark iteration')
 
-parser.add_argument('--num-iters', type=int, default=10,
+parser.add_argument('--num-iters', type=int, default=50,
                     help='number of benchmark iterations')
 
 args = parser.parse_args()
