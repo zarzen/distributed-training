@@ -69,13 +69,40 @@ target = torch.LongTensor(args.batch_size).random_() % 1000
 if args.cuda:
     data, target = data.cuda(), target.cuda()
 
+step1 = torch.cuda.Event(enable_timing=True)
+step2 = torch.cuda.Event(enable_timing=True)
+step3 = torch.cuda.Event(enable_timing=True)
+step4 = torch.cuda.Event(enable_timing=True)
+step5 = torch.cuda.Event(enable_timing=True)
+step6 = torch.cuda.Event(enable_timing=True)
+
+time_zero_grad = []
+time_model = []
+time_loss = []
+time_back = []
+time_step = []
+time_batch = []
 
 def benchmark_step():
+    step1.record()
     optimizer.zero_grad()
+    step2.record()
     output = model(data)
+    step3.record()
     loss = F.cross_entropy(output, target)
+    step4.record()
     loss.backward()
+    step5.record()
     optimizer.step()
+    step6.record()
+    torch.cuda.synchronize()
+    time_zero_grad.append(step2.elapsed_time(step1))
+    time_model.append(step3.elapsed_time(step2))
+    time_loss.append(step4.elapsed_time(step3))
+    time_back.append(step5.elapsed_time(step4))
+    time_step.append(step6.elapsed_time(step5))
+    time_batch.append(step6.elapsed_time(step1))
+
 
 
 def log(s, nl=True):
@@ -99,7 +126,8 @@ img_secs = []
 for x in range(args.num_iters):
     time = timeit.timeit(benchmark_step, number=args.num_batches_per_iter)
     img_sec = args.batch_size * args.num_batches_per_iter / time
-    log('Iter #%d: %.1f img/sec per %s' % (x, img_sec, device))
+    if x % 20 == 0:
+        log('Iter #%d: %.1f img/sec per %s' % (x, img_sec, device))
     img_secs.append(img_sec)
 
 # Results
@@ -108,3 +136,9 @@ img_sec_conf = 1.96 * np.std(img_secs)
 log('Img/sec per %s: %.3f +-%.3f' % (device, img_sec_mean, img_sec_conf))
 log('Total img/sec on %d %s(s): %.1f +-%.1f' %
     (hvd.size(), device, hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
+print("zero_grad", np.mean(time_zero_grad))
+print("model", np.mean(time_model))
+print("loss", np.mean(time_loss))
+print("back", np.mean(time_back))
+print("step", np.mean(time_step))
+print("batch", np.mean(time_batch))
