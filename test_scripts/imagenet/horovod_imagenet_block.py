@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--model', type=str, default='resnet50',
                     help='model to benchmark')
-parser.add_argument('--train-dir', default=os.path.expanduser('~/data/imagenet/train'),
+parser.add_argument('--train-dir', default=os.path.expanduser('/tmp/ramdisk'),
                     help='path to training data')
 parser.add_argument('--val-dir', default=os.path.expanduser('~/data/imagenet/validation'),
                     help='path to validation data')
@@ -192,6 +192,8 @@ time_back = []
 time_step = []
 time_batch = []
 
+step1.record()
+
 def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
@@ -262,17 +264,7 @@ def train(epoch):
             optimizer.step()
             step14.record()
             torch.cuda.synchronize()
-            if batch_idx % 10 == 9:
-                time_load_data.append(step2.elapsed_time(step1))
-                time_zero_grad.append(step4.elapsed_time(step3))
-                time_model.append(step5.elapsed_time(step4))
-                time_accu.append(step7.elapsed_time(step6))
-                time_accu_update.append(step8.elapsed_time(step7))
-                time_loss.append(step9.elapsed_time(step8))
-                time_loss_update.append(step10.elapsed_time(step9))
-                time_back.append(step12.elapsed_time(step11))
-                time_step.append(step14.elapsed_time(step13))
-                time_batch.append(step14.elapsed_time(step1))
+            time_batch.append(step14.elapsed_time(step1))
             step1.record()
             lobj["dur"]=time.time()-lobj["ts"]
             model_logger.info(json.dumps(lobj))
@@ -371,13 +363,4 @@ for epoch in range(resume_from_epoch, args.epochs):
 lobj["dur"]=time.time()-lobj["ts"]
 model_logger.info(json.dumps(lobj))
 if hvd.rank() == 0:
-    print("load_data", np.mean(time_load_data[5:]))
-    print("zero_grad", np.mean(time_zero_grad[5:]))
-    print("model", np.mean(time_model[5:]))
-    print("accu", np.mean(time_accu[5:]))
-    print("accu_update", np.mean(time_accu_update[5:]))
-    print("loss", np.mean(time_loss[5:]))
-    print("loss_update", np.mean(time_loss_update[5:]))
-    print("back", np.mean(time_back[5:]))
-    print("step", np.mean(time_step[5:]))
-    print("batch", np.mean(time_batch[5:]))
+    print("batch", np.mean(time_batch[40:]))
