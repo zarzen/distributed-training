@@ -1,6 +1,6 @@
 from __future__ import print_function
 
-import torch, torchvision
+import torch
 import argparse
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
@@ -8,21 +8,24 @@ import torch.optim as optim
 import torch.utils.data.distributed
 from torchvision import datasets, transforms, models
 import horovod.torch as hvd
-import tensorboardX
+
 import os
 import math
 from tqdm import tqdm
-import time
-from datetime import datetime
+from logger_hvd import get_logger, log_time, sync_e
 import json
-import logging
-from path_fix import get_logger
-import timeit
+import time
 import numpy as np
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('--model', type=str, default='resnet50',
+                    help='model to benchmark')
+parser.add_argument('--train-dir', default=os.path.expanduser('/tmp/ramdisk'),
+                    help='path to training data')
+parser.add_argument('--val-dir', default=os.path.expanduser('~/data/imagenet/validation'),
+                    help='path to validation data')
 parser.add_argument('--log-dir', default='./logs',
                     help='tensorboard log directory')
 parser.add_argument('--checkpoint-format', default='./checkpoint-{epoch}.pth.tar',
@@ -35,15 +38,15 @@ parser.add_argument('--batches-per-allreduce', type=int, default=1,
                          'total batch size.')
 
 # Default settings from https://arxiv.org/abs/1706.02677.
-parser.add_argument('--batch-size', type=int, default=128,
+parser.add_argument('--batch-size', type=int, default=32,
                     help='input batch size for training')
-parser.add_argument('--val-batch-size', type=int, default=128,
+parser.add_argument('--val-batch-size', type=int, default=32,
                     help='input batch size for validation')
-parser.add_argument('--epochs', type=int, default=10,
+parser.add_argument('--epochs', type=int, default=90,
                     help='number of epochs to train')
 parser.add_argument('--base-lr', type=float, default=0.0125,
                     help='learning rate for a single GPU')
-parser.add_argument('--warmup-epochs', type=float, default=5,
+parser.add_argument('--warmup-epochs', type=float, default=2,
                     help='number of warmup epochs')
 parser.add_argument('--momentum', type=float, default=0.9,
                     help='SGD momentum')
@@ -87,36 +90,48 @@ verbose = 1 if hvd.rank() == 0 else 0
 
 # Horovod: write TensorBoard logs on first worker.
 # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
+log_writer = None
 
 model_logger = get_logger(hvd)
 
 # Horovod: limit # of CPU threads to be used per worker.
-__n_threads = int(os.cpu_count() / torch.cuda.device_count())
-print('torch num threads:', __n_threads)
-torch.set_num_threads(__n_threads)
+torch.set_num_threads(4)
 
-kwargs = {'num_workers': __n_threads, 'pin_memory': True} if args.cuda else {}
-transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
-print('cwd:', os.getcwd())
-train_dataset = torchvision.datasets.CIFAR10(
-    root='~/distributed-training/data', train=True,
-    download=False, transform=transform)
-
+kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+train_dataset = \
+    datasets.ImageFolder(args.train_dir,
+                         transform=transforms.Compose([
+                             transforms.RandomResizedCrop(224),
+                             transforms.RandomHorizontalFlip(),
+                             transforms.ToTensor(),
+                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                  std=[0.229, 0.224, 0.225])
+                         ]))
 # Horovod: use DistributedSampler to partition data among workers. Manually specify
 # `num_replicas=hvd.size()` and `rank=hvd.rank()`.
 train_sampler = torch.utils.data.distributed.DistributedSampler(
     train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=allreduce_batch_size,
     sampler=train_sampler, **kwargs)
 
+val_dataset = \
+    datasets.ImageFolder(args.val_dir,
+                         transform=transforms.Compose([
+                             transforms.Resize(256),
+                             transforms.CenterCrop(224),
+                             transforms.ToTensor(),
+                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                  std=[0.229, 0.224, 0.225])
+                         ]))
+val_sampler = torch.utils.data.distributed.DistributedSampler(
+    val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size,
+                                         sampler=val_sampler, **kwargs)
 
-# Set up standard ResNet-50 model.
-model = models.resnet101()
+
+# Set up standard model.
+model = getattr(models, args.model)()
 
 if args.cuda:
     # Move model to GPU.
@@ -133,10 +148,11 @@ optimizer = optim.SGD(model.parameters(),
 compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
 
 # Horovod: wrap optimizer with DistributedOptimizer.
-# optimizer = hvd.DistributedOptimizer(
-#     optimizer, named_parameters=model.named_parameters(),
-#     compression=compression,
-#     backward_passes_per_step=args.batches_per_allreduce)
+optimizer = hvd.DistributedOptimizer(
+    optimizer, named_parameters=model.named_parameters(),
+    compression=compression,
+    model_name=args.model,
+    backward_passes_per_step=args.batches_per_allreduce)
 
 # Restore from a previous checkpoint, if initial_epoch is specified.
 # Horovod: restore on the first worker which will broadcast weights to other workers.
@@ -147,12 +163,37 @@ if resume_from_epoch > 0 and hvd.rank() == 0:
     optimizer.load_state_dict(checkpoint['optimizer'])
 
 # Horovod: broadcast parameters & optimizer state.
-# hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-# hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-# profile = LineProfiler()
+step1 = torch.cuda.Event(enable_timing=True)
+step2 = torch.cuda.Event(enable_timing=True)
+step3 = torch.cuda.Event(enable_timing=True)
+step4 = torch.cuda.Event(enable_timing=True)
+step5 = torch.cuda.Event(enable_timing=True)
+step6 = torch.cuda.Event(enable_timing=True)
+step7 = torch.cuda.Event(enable_timing=True)
+step8 = torch.cuda.Event(enable_timing=True)
+step9 = torch.cuda.Event(enable_timing=True)
+step10 = torch.cuda.Event(enable_timing=True)
+step11 = torch.cuda.Event(enable_timing=True)
+step12 = torch.cuda.Event(enable_timing=True)
+step13 = torch.cuda.Event(enable_timing=True)
+step14 = torch.cuda.Event(enable_timing=True)
 
-# @profile
+time_load_data = []
+time_zero_grad = []
+time_model = []
+time_accu = []
+time_accu_update = []
+time_loss = []
+time_loss_update = []
+time_back = []
+time_step = []
+time_batch = []
+
+step1.record()
+
 def train(epoch):
     model.train()
     train_sampler.set_epoch(epoch)
@@ -163,43 +204,103 @@ def train(epoch):
               desc='Train Epoch     #{}'.format(epoch + 1),
               disable=not verbose) as t:
         for batch_idx, (data, target) in enumerate(train_loader):
-            adjust_learning_rate(epoch, batch_idx)
-            # if batch_idx >= 50:
-            #     return
+            # number of batchs limit
+            if batch_idx >= 500:
+                return 
+
             if args.cuda:
-                data, target = data.cuda(), target.cuda()
+                with log_time(model_logger, "batch-data-tocuda", hvd):
+                    data, target = data.cuda(), target.cuda()
+            step2.record()
+            adjust_learning_rate(epoch, batch_idx)
+            step3.record()
             optimizer.zero_grad()
+            step4.record()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
                 target_batch = target[i:i + args.batch_size]
+                # sync_e()
                 lobj = {"ph": "X", "name": "foward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
                 output = model(data_batch)
+                step5.record()
+                # event record 
+                # sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
 
                 lobj = {"ph": "X", "name": "compute-loss", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
-                train_accuracy.update(accuracy(output, target_batch))
-                loss = F.cross_entropy(output, target_batch)
-                train_loss.update(loss)
+                step6.record()
+                with log_time(model_logger, "horovod-acc-comp", hvd):
+                    _acc = accuracy(output, target_batch)
+                step7.record()
+                with log_time(model_logger, "horovod-acc-update", hvd):
+                    train_accuracy.update(_acc)
+                step8.record()
+                with log_time(model_logger, "torch-loss-comp", hvd):
+                    loss = F.cross_entropy(output, target_batch)
+                step9.record()
+                with log_time(model_logger, "horovod-loss-update", hvd):
+                    train_loss.update(loss)
+                step10.record()
                 # Average gradients among sub-batches
-                loss.div_(math.ceil(float(len(data)) / args.batch_size))
+                with log_time(model_logger, "avg-sub-batches-loss", hvd):
+                    loss.div_(math.ceil(float(len(data)) / args.batch_size))
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
+
+                # sync_e()
                 lobj = {"ph": "X", "name": "backward", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+                step11.record()
                 loss.backward()
+                step12.record()
+                # sync_e()
                 lobj["dur"]=time.time()-lobj["ts"]
                 model_logger.info(json.dumps(lobj))
-            
+
             # Gradient is applied across all ranks
             lobj = {"ph": "X", "name": "update-gradients", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
+            step13.record()
             optimizer.step()
+            step14.record()
+            torch.cuda.synchronize()
+            time_batch.append(step14.elapsed_time(step1))
+            step1.record()
             lobj["dur"]=time.time()-lobj["ts"]
             model_logger.info(json.dumps(lobj))
 
             t.set_postfix({'loss': train_loss.avg.item(),
                            'accuracy': 100. * train_accuracy.avg.item()})
             t.update(1)
+
+    if log_writer:
+        log_writer.add_scalar('train/loss', train_loss.avg, epoch)
+        log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
+
+
+def validate(epoch):
+    model.eval()
+    val_loss = Metric('val_loss')
+    val_accuracy = Metric('val_accuracy')
+
+    with tqdm(total=len(val_loader),
+              desc='Validate Epoch  #{}'.format(epoch + 1),
+              disable=not verbose) as t:
+        with torch.no_grad():
+            for data, target in val_loader:
+                if args.cuda:
+                    data, target = data.cuda(), target.cuda()
+                output = model(data)
+
+                val_loss.update(F.cross_entropy(output, target))
+                val_accuracy.update(accuracy(output, target))
+                t.set_postfix({'loss': val_loss.avg.item(),
+                               'accuracy': 100. * val_accuracy.avg.item()})
+                t.update(1)
+
+    if log_writer:
+        log_writer.add_scalar('val/loss', val_loss.avg, epoch)
+        log_writer.add_scalar('val/accuracy', val_accuracy.avg, epoch)
 
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
@@ -227,10 +328,6 @@ def accuracy(output, target):
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
-def log(s, nl=True):
-    if hvd.rank() != 0:
-        return
-    print(s, end='\n' if nl else '')
 
 def save_checkpoint(epoch):
     if hvd.rank() == 0:
@@ -250,31 +347,20 @@ class Metric(object):
         self.n = torch.tensor(0.)
 
     def update(self, val):
-        self.sum += hvd.allreduce(val.detach().cpu(), name=self.name)
+        self.sum += val
         self.n += 1
 
     @property
     def avg(self):
         return self.sum / self.n
-img_secs = []
+
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
 for epoch in range(resume_from_epoch, args.epochs):
-    # train(epoch)
+    train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
-    timeer_ = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
-    img_sec = args.batch_size * len(train_loader) / timeer_
-    log('\nIter #%d: %.1f img/sec per GPU in %.1f' % (epoch, img_sec, timeer_))
-    img_secs.append(img_sec)
-
-# Results
-img_sec_mean = np.mean(img_secs[1:])
-img_sec_conf = 1.96 * np.std(img_secs[1:])
-log('Img/sec per GPU: %.3f +-%.3f' % (img_sec_mean, img_sec_conf))
-log('Total img/sec on %d GPU(s): %.1f +-%.1f' %
-    (hvd.size(), hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
 
 lobj["dur"]=time.time()-lobj["ts"]
 model_logger.info(json.dumps(lobj))
-
-# profile.print_stats()
+if hvd.rank() == 0:
+    print("batch", np.mean(time_batch[40:]))

@@ -12,13 +12,11 @@ import tensorboardX
 import os
 import math
 from tqdm import tqdm
+from logger import get_logger, log_time, sync_e
+import json
 import time
 from datetime import datetime
-import json
 import logging
-from path_fix import get_logger
-import timeit
-import numpy as np
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
@@ -87,6 +85,7 @@ verbose = 1 if hvd.rank() == 0 else 0
 
 # Horovod: write TensorBoard logs on first worker.
 # log_writer = tensorboardX.SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
+log_writer = None
 
 model_logger = get_logger(hvd)
 
@@ -115,7 +114,8 @@ train_loader = torch.utils.data.DataLoader(
     sampler=train_sampler, **kwargs)
 
 
-# Set up standard ResNet-50 model.
+
+# Set up standard ResNet-101 model.
 model = models.resnet101()
 
 if args.cuda:
@@ -133,10 +133,10 @@ optimizer = optim.SGD(model.parameters(),
 compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
 
 # Horovod: wrap optimizer with DistributedOptimizer.
-# optimizer = hvd.DistributedOptimizer(
-#     optimizer, named_parameters=model.named_parameters(),
-#     compression=compression,
-#     backward_passes_per_step=args.batches_per_allreduce)
+optimizer = hvd.DistributedOptimizer(
+    optimizer, named_parameters=model.named_parameters(),
+    compression=compression,
+    backward_passes_per_step=args.batches_per_allreduce)
 
 # Restore from a previous checkpoint, if initial_epoch is specified.
 # Horovod: restore on the first worker which will broadcast weights to other workers.
@@ -147,9 +147,10 @@ if resume_from_epoch > 0 and hvd.rank() == 0:
     optimizer.load_state_dict(checkpoint['optimizer'])
 
 # Horovod: broadcast parameters & optimizer state.
-# hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-# hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
+hvd.allreduce_init(model, batch_size_mb=64)
 # profile = LineProfiler()
 
 # @profile
@@ -167,7 +168,8 @@ def train(epoch):
             # if batch_idx >= 50:
             #     return
             if args.cuda:
-                data, target = data.cuda(), target.cuda()
+                with log_time(model_logger, "batch-data-tocuda", hvd):
+                    data, target = data.cuda(), target.cuda()
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
@@ -201,6 +203,9 @@ def train(epoch):
                            'accuracy': 100. * train_accuracy.avg.item()})
             t.update(1)
 
+    if log_writer:
+        log_writer.add_scalar('train/loss', train_loss.avg, epoch)
+        log_writer.add_scalar('train/accuracy', train_accuracy.avg, epoch)
 
 # Horovod: using `lr = base_lr * hvd.size()` from the very beginning leads to worse final
 # accuracy. Scale the learning rate `lr = base_lr` ---> `lr = base_lr * hvd.size()` during
@@ -227,10 +232,6 @@ def accuracy(output, target):
     pred = output.max(1, keepdim=True)[1]
     return pred.eq(target.view_as(pred)).cpu().float().mean()
 
-def log(s, nl=True):
-    if hvd.rank() != 0:
-        return
-    print(s, end='\n' if nl else '')
 
 def save_checkpoint(epoch):
     if hvd.rank() == 0:
@@ -256,23 +257,12 @@ class Metric(object):
     @property
     def avg(self):
         return self.sum / self.n
-img_secs = []
+
 lobj = {"ph": "X", "name": "training", "ts": time.time(), "pid": hvd.rank(), "dur": 0}
 for epoch in range(resume_from_epoch, args.epochs):
-    # train(epoch)
+    train(epoch)
     # validate(epoch)
     # save_checkpoint(epoch)
-    timeer_ = timeit.timeit("train(epoch)", setup="from __main__ import train, epoch", number=1)
-    img_sec = args.batch_size * len(train_loader) / timeer_
-    log('\nIter #%d: %.1f img/sec per GPU in %.1f' % (epoch, img_sec, timeer_))
-    img_secs.append(img_sec)
-
-# Results
-img_sec_mean = np.mean(img_secs[1:])
-img_sec_conf = 1.96 * np.std(img_secs[1:])
-log('Img/sec per GPU: %.3f +-%.3f' % (img_sec_mean, img_sec_conf))
-log('Total img/sec on %d GPU(s): %.1f +-%.1f' %
-    (hvd.size(), hvd.size() * img_sec_mean, hvd.size() * img_sec_conf))
 
 lobj["dur"]=time.time()-lobj["ts"]
 model_logger.info(json.dumps(lobj))
