@@ -11,7 +11,7 @@ class Topology:
         :param nRanks: number of ranks 
         :param nChannels: number of rings in the topology
         """
-        self.colors = ["red", "blue", "green", 'cyan']
+        self.colors = ["red", "blue", "green", 'cyan', 'yellow', 'silver', 'tomato', 'purple']
         self.ringEdges = []
         self.treeEdges = []
         self.ranksInfo = ranksInfo
@@ -24,6 +24,8 @@ class Topology:
         :param cNum: channel number, will be colored differently
         :param eType: mark the edge type, P2P/IPC, P2P/direct pointer etc
         """
+        if cNum > 1:
+            return
         self.ringEdges.append([src, dst, eType, cNum])
     
     def addTreeEdge(self, src, dst, cNum):
@@ -139,7 +141,7 @@ def getRanksInfo(logfile):
                 fields = line.split(' ')
                 nranks = int(fields[fields.index('nranks') + 1])
                 rank = int(fields[fields.index('rank') + 1])
-                nvmlDev = int(fields[fields.index('nvmlDev') + 1])
+                nvmlDev = int(fields[fields.index('cudaDev') + 1])
                 if infos['nRanks'] < 0:
                     infos['nRanks'] = nranks
                 infos['ranks'][rank] = nvmlDev
@@ -158,26 +160,33 @@ def isTreeLog(line):
     return ret
 
 def isRingLog(line):
-    ret = True if "NCCL INFO Ring" in line else False
-    return ret
+    if "NCCL INFO Channel" in line:
+        fields = line.strip('\n').split(' ')
+        channel_id = fields[fields.index('Channel') + 1]
+        if '/' in channel_id:
+            return False
+        else:
+            return True
+    else:
+        return False
 
 def parseRingLog(line):
     """"""
     # import pdb; pdb.set_trace()
     line = line.strip('\n')
     fields = line.split(' ')
-    cNum = int(fields[fields.index('Ring') + 1])
+
+    cNum = fields[fields.index('Channel') + 1]
+    cNum = int(cNum)
+
     eType = fields[fields.index('via') + 1]
 
     src = fields[fields.index('->') - 1]
     dst = fields[fields.index('->') + 1]
 
-    if '[receive]' in fields or '[send]' in fields:
-        return int(src), int(dst), eType, cNum
-    else:
-        srcRank = int(src[:src.index('[')])
-        dstRank = int(dst[:dst.index('[')])
-        return srcRank, dstRank, eType, cNum
+    srcRank = int(src[:src.index('[')])
+    dstRank = int(dst[:dst.index('[')])
+    return srcRank, dstRank, eType, cNum
 
 def parseTreeLog(line):
     """"""
@@ -192,7 +201,7 @@ def parseTreeLog(line):
         treeEdges = fields[startIdx + i + 1]
         up, cRank, downs = treeEdges.split('->')
         downs = downs.split('/')
-        if up != '-1':
+        if '-1' not in up:
             edges.append([int(up), int(cRank), cNum])
         for d in downs:
             if d != '-1':
@@ -219,9 +228,10 @@ def main():
                 src, dst, eType, cNum = parseRingLog(line)
                 topo.addRingEdge(src, dst, eType, cNum)
             elif isTreeLog(line):
-                treeEdges = parseTreeLog(line)
-                for edge in treeEdges:
-                    topo.addTreeEdge(*edge)
+                # treeEdges = parseTreeLog(line)
+                # for edge in treeEdges:
+                #     topo.addTreeEdge(*edge)
+                pass
             else:
                 pass
         topo.graph()
